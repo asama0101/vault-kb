@@ -1,0 +1,12 @@
+{
+  "name": "vault-kb",
+  "owner": { "name": "vault-kb contributors" },
+  "description": "Obsidian の知識ベース用 Claude Code プラグイン",
+  "plugins": [
+    {
+      "name": "vault-kb",
+      "source": "./plugins/vault-kb",
+      "description": "vault の `00_inbox` に置いた資料を、AI が案件・区分のフォルダへ自動で片づけ、OKF 形式のノートにして、出典付きで検索・QA できる。Windows 専用。"
+    }
+  ]
+}
