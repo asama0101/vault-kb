@@ -270,3 +270,11 @@ def test_open_itemsは何もなければ未解消0(vault, data_dir):
         [],
         0,
     )
+
+
+def test_snapshotは案件の下のドット始まりのフォルダの中を含めない(vault):
+    put(vault, "20_projects/案件A/共通/a.txt")
+    put(vault, "20_projects/案件A/共通/.obsidian/workspace.json")
+    put(vault, "20_projects/案件A/.git/config")
+
+    assert list(watch.snapshot(vault)) == ["20_projects/案件A/共通/a.txt"]

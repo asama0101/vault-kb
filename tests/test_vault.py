@@ -1,6 +1,7 @@
 import stat
 
 import pytest
+from vault_kb import vault
 from vault_kb.vault import (
     ConfigError,
     VaultNotFound,
@@ -14,6 +15,7 @@ from vault_kb.vault import (
     next_category_name,
     resolve_category,
     save_config,
+    walk,
 )
 
 
@@ -188,3 +190,22 @@ def test_note_pathは原本と同じ相対パスにmdを足したnotes_dirの下
 
 def test_is_linkは存在しないパスでFalseを返す(tmp_path):
     assert is_link(tmp_path / "ない") is False
+
+
+def test_walkはリンクのファイルを含めない(tmp_path, monkeypatch):
+    root = tmp_path / "root"
+    root.mkdir()
+    (root / "実体.txt").write_text("中", encoding="utf-8")
+    (root / "リンク.txt").write_text("外", encoding="utf-8")
+    # 権限がなくてもリンクを作れない環境があるので、リンクの判定だけを置き換える
+    monkeypatch.setattr(vault, "is_link", lambda path: path.name == "リンク.txt")
+
+    _, files = walk(root)
+
+    assert [f.name for f in files] == ["実体.txt"]
+
+
+@pytest.mark.parametrize("name", ["CON", "aux", "Nul.txt", "COM1", "lpt9"])
+def test_check_folder_nameはWindowsの予約名を拒む(name):
+    with pytest.raises(ValueError, match="予約名"):
+        check_folder_name(name)

@@ -97,7 +97,8 @@ def snapshot(vault: Vault) -> dict[str, tuple[int, int]]:
             continue
         _, files = walk(root)
         for path in files:
-            if not bundle.is_original_file(path):
+            hidden = any(part.startswith(".") for part in path.relative_to(vault.base).parts)
+            if hidden or not bundle.is_original_file(path):  # .git・.obsidian などは資料ではない
                 continue
             try:
                 found[vault.rel(path)] = convert.stat_of(path)

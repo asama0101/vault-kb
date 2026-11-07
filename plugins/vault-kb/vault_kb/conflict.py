@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 import os
-import re
 from datetime import datetime
 from pathlib import Path, PurePosixPath
 from typing import Any
@@ -13,9 +12,6 @@ from . import convert
 from .vault import INBOX_NAME, Vault, atomic_write, check_folder_name, is_ignored, is_link
 
 CONFLICTS_NAME = ".vault-kb-conflicts.json"  # . 始まりなので走査が無視する
-_DEVICE_NAME = re.compile(
-    r"(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])(\..*)?", re.IGNORECASE
-)  # Windows の予約名
 _FIELDS = {"source": str, "destination": str, "size": int, "mtime_ns": int}
 
 Record = dict[str, Any]
@@ -61,9 +57,7 @@ def _usable_name(name: str) -> bool:
         check_folder_name(name)
     except ValueError:
         return False
-    return (
-        not name.endswith((" ", ".")) and not is_ignored(name) and not _DEVICE_NAME.fullmatch(name)
-    )
+    return not name.endswith((" ", ".")) and not is_ignored(name)
 
 
 def _has_link(vault: Vault, rel: str) -> bool:
