@@ -1,0 +1,67 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 400" width="800" height="400" font-family="'Yu Gothic UI','Yu Gothic',Meiryo,sans-serif" role="img" aria-labelledby="t d">
+  <title id="t">vault-kb の全体の流れ</title>
+  <desc id="d">00_inbox に置いた資料を AI が案件・区分のフォルダへ移し、原本からノートを作る。質問すると、ノートを検索して、結論と出典つきで答える。</desc>
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="#333"/>
+    </marker>
+  </defs>
+  <rect x="0.5" y="0.5" width="799" height="399" fill="#ffffff" stroke="#bbbbbb"/>
+
+  <!-- 1 段目: 置く → 片づける → 原本 -->
+  <rect x="20" y="30" width="170" height="90" fill="#eef3ff" stroke="#3b5bdb" stroke-width="2"/>
+  <text x="105" y="68" text-anchor="middle" font-size="16" font-weight="bold" fill="#1b2a6b">00_inbox</text>
+  <text x="105" y="94" text-anchor="middle" font-size="14" fill="#1b2a6b">資料を置く</text>
+
+  <line x1="190" y1="75" x2="248" y2="75" stroke="#333" stroke-width="2" marker-end="url(#a)"/>
+  <text x="219" y="64" text-anchor="middle" font-size="13" fill="#333">資料</text>
+
+  <rect x="250" y="30" width="210" height="90" rx="30" fill="#fff4e0" stroke="#e8590c" stroke-width="2"/>
+  <text x="355" y="68" text-anchor="middle" font-size="16" font-weight="bold" fill="#7a2e00">片づけ（AI）</text>
+  <text x="355" y="94" text-anchor="middle" font-size="14" fill="#7a2e00">案件・区分を決めて移す</text>
+
+  <line x1="460" y1="75" x2="538" y2="75" stroke="#333" stroke-width="2" marker-end="url(#a)"/>
+  <text x="499" y="64" text-anchor="middle" font-size="13" fill="#333">原本を移す</text>
+
+  <rect x="540" y="30" width="240" height="90" fill="#eef3ff" stroke="#3b5bdb" stroke-width="2"/>
+  <text x="660" y="68" text-anchor="middle" font-size="15" font-weight="bold" fill="#1b2a6b">20_projects/&lt;案件&gt;/&lt;区分&gt;/</text>
+  <text x="660" y="94" text-anchor="middle" font-size="14" fill="#1b2a6b">原本（中身は変えない）</text>
+
+  <!-- 片づけ → ノート -->
+  <line x1="355" y1="120" x2="355" y2="198" stroke="#333" stroke-width="2" marker-end="url(#a)"/>
+  <text x="367" y="164" font-size="13" fill="#333">ノートを作る</text>
+
+  <!-- 2 段目: 質問 → ノート → 回答 -->
+  <rect x="20" y="200" width="170" height="90" rx="6" fill="#ffffff" stroke="#555" stroke-width="2" stroke-dasharray="7 4"/>
+  <text x="105" y="232" text-anchor="middle" font-size="16" font-weight="bold" fill="#222">質問</text>
+  <text x="105" y="256" text-anchor="middle" font-size="14" fill="#222">/vault-kb:ask</text>
+  <text x="105" y="276" text-anchor="middle" font-size="13" fill="#222">利用者が打つ</text>
+
+  <line x1="190" y1="245" x2="248" y2="245" stroke="#333" stroke-width="2" marker-end="url(#a)"/>
+  <text x="219" y="234" text-anchor="middle" font-size="13" fill="#333">検索</text>
+
+  <rect x="250" y="200" width="210" height="90" fill="#eef3ff" stroke="#3b5bdb" stroke-width="2"/>
+  <text x="355" y="230" text-anchor="middle" font-size="16" font-weight="bold" fill="#1b2a6b">.notes/</text>
+  <text x="355" y="254" text-anchor="middle" font-size="14" fill="#1b2a6b">原本から作る Markdown</text>
+  <text x="355" y="274" text-anchor="middle" font-size="14" fill="#1b2a6b">案件・区分の index.md も更新</text>
+
+  <line x1="460" y1="245" x2="538" y2="245" stroke="#333" stroke-width="2" marker-end="url(#a)"/>
+  <text x="499" y="234" text-anchor="middle" font-size="13" fill="#333">根拠</text>
+
+  <rect x="540" y="200" width="240" height="90" rx="6" fill="#ffffff" stroke="#555" stroke-width="2" stroke-dasharray="7 4"/>
+  <text x="660" y="232" text-anchor="middle" font-size="16" font-weight="bold" fill="#222">回答</text>
+  <text x="660" y="256" text-anchor="middle" font-size="14" fill="#222">結論 + 出典</text>
+  <text x="660" y="276" text-anchor="middle" font-size="13" fill="#222">原本へのリンク・区分・場所</text>
+
+  <!-- 補足 -->
+  <text x="20" y="318" font-size="14" fill="#222">片づけは、/vault-kb:watch を打ったセッションが開いている間、変化のたびに自動で動く。</text>
+  <text x="20" y="338" font-size="14" fill="#222">/vault-kb:ask は、答える前に片づける。</text>
+
+  <!-- 凡例 -->
+  <rect x="20" y="358" width="26" height="22" fill="#eef3ff" stroke="#3b5bdb" stroke-width="2"/>
+  <text x="54" y="374" font-size="13" fill="#222">フォルダ・ファイル</text>
+  <rect x="200" y="358" width="26" height="22" rx="10" fill="#fff4e0" stroke="#e8590c" stroke-width="2"/>
+  <text x="234" y="374" font-size="13" fill="#222">AI の処理</text>
+  <rect x="330" y="358" width="26" height="22" rx="3" fill="#ffffff" stroke="#555" stroke-width="2" stroke-dasharray="5 3"/>
+  <text x="364" y="374" font-size="13" fill="#222">利用者の操作と、その結果</text>
+</svg>

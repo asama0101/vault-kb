@@ -1,0 +1,56 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 440" width="800" height="440" font-family="'Yu Gothic UI','Yu Gothic',Meiryo,sans-serif" role="img" aria-labelledby="t d">
+  <title id="t">同名の資料があるときの流れ</title>
+  <desc id="d">置く先に同じ名前の原本があるとき、中身が同じなら置いた側を捨てる。違うなら動かさず保留し、/vault-kb:resolve で上書き・後続を削除・保留のままから選ぶ。</desc>
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="#333"/>
+    </marker>
+  </defs>
+  <rect x="0.5" y="0.5" width="799" height="439" fill="#ffffff" stroke="#bbbbbb"/>
+
+  <rect x="20" y="120" width="150" height="70" rx="30" fill="#fff4e0" stroke="#e8590c" stroke-width="2"/>
+  <text x="95" y="150" text-anchor="middle" font-size="15" font-weight="bold" fill="#7a2e00">資料を片づける</text>
+  <text x="95" y="172" text-anchor="middle" font-size="13" fill="#7a2e00">同名の原本がある</text>
+
+  <line x1="170" y1="155" x2="208" y2="155" stroke="#333" stroke-width="2" marker-end="url(#a)"/>
+
+  <polygon points="290,100 370,155 290,210 210,155" fill="#fff4e0" stroke="#e8590c" stroke-width="2"/>
+  <text x="290" y="160" text-anchor="middle" font-size="14" font-weight="bold" fill="#7a2e00">中身は同じ？</text>
+
+  <line x1="290" y1="100" x2="290" y2="68" stroke="#333" stroke-width="2" marker-end="url(#a)"/>
+  <text x="300" y="90" font-size="13" fill="#333">同じ</text>
+  <rect x="190" y="12" width="200" height="54" rx="30" fill="#fff4e0" stroke="#e8590c" stroke-width="2"/>
+  <text x="290" y="35" text-anchor="middle" font-size="14" font-weight="bold" fill="#7a2e00">置いた側を捨てる</text>
+  <text x="290" y="54" text-anchor="middle" font-size="13" fill="#7a2e00">log.md に Discarded</text>
+
+  <line x1="370" y1="155" x2="428" y2="155" stroke="#333" stroke-width="2" marker-end="url(#a)"/>
+  <text x="399" y="144" text-anchor="middle" font-size="13" fill="#333">違う</text>
+  <rect x="430" y="120" width="190" height="70" fill="#eef3ff" stroke="#3b5bdb" stroke-width="2"/>
+  <text x="525" y="148" text-anchor="middle" font-size="15" font-weight="bold" fill="#1b2a6b">動かさず保留</text>
+  <text x="525" y="170" text-anchor="middle" font-size="13" fill="#1b2a6b">同名の確認待ちとして残す</text>
+
+  <line x1="525" y1="190" x2="525" y2="238" stroke="#333" stroke-width="2" marker-end="url(#a)"/>
+  <text x="537" y="219" font-size="13" fill="#333">利用者が打つ</text>
+  <rect x="430" y="240" width="190" height="50" rx="6" fill="#ffffff" stroke="#555" stroke-width="2" stroke-dasharray="7 4"/>
+  <text x="525" y="260" text-anchor="middle" font-size="14" font-weight="bold" fill="#222">/vault-kb:resolve</text>
+  <text x="525" y="279" text-anchor="middle" font-size="13" fill="#222">1 件ずつ選ぶ</text>
+
+  <line x1="480" y1="290" x2="155" y2="338" stroke="#333" stroke-width="2" marker-end="url(#a)"/>
+  <line x1="525" y1="290" x2="400" y2="338" stroke="#333" stroke-width="2" marker-end="url(#a)"/>
+  <line x1="570" y1="290" x2="645" y2="338" stroke="#333" stroke-width="2" marker-end="url(#a)"/>
+
+  <rect x="40" y="340" width="230" height="84" fill="#ffffff" stroke="#c92a2a" stroke-width="4"/>
+  <text x="155" y="364" text-anchor="middle" font-size="15" font-weight="bold" fill="#222">上書き</text>
+  <text x="155" y="386" text-anchor="middle" font-size="13" fill="#222">既存の原本を置き換える</text>
+  <text x="155" y="408" text-anchor="middle" font-size="13" font-weight="bold" fill="#a61e1e">既存の中身は戻せない</text>
+
+  <rect x="285" y="340" width="230" height="84" fill="#ffffff" stroke="#c92a2a" stroke-width="4"/>
+  <text x="400" y="364" text-anchor="middle" font-size="15" font-weight="bold" fill="#222">後続を削除</text>
+  <text x="400" y="386" text-anchor="middle" font-size="13" fill="#222">後から来た資料を削除する</text>
+  <text x="400" y="408" text-anchor="middle" font-size="13" font-weight="bold" fill="#a61e1e">その資料は戻せない</text>
+
+  <rect x="530" y="340" width="230" height="84" fill="#ffffff" stroke="#555" stroke-width="2"/>
+  <text x="645" y="364" text-anchor="middle" font-size="15" font-weight="bold" fill="#222">保留のまま</text>
+  <text x="645" y="386" text-anchor="middle" font-size="13" fill="#222">何もしない</text>
+  <text x="645" y="408" text-anchor="middle" font-size="13" fill="#222">確認待ちのまま残る</text>
+</svg>
