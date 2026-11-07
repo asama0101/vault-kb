@@ -48,6 +48,7 @@ MAX_CATEGORY_NUMBER = 98
 _FORBIDDEN = re.compile(r'[\\/:*?"<>|\x00-\x1f]')
 _CATEGORY_NUMBER = re.compile(r"(\d+)_(.+)", re.DOTALL)
 _IGNORED_NAMES = {"thumbs.db", "desktop.ini"}
+_DEVICE_NAME = re.compile(r"(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])(\..*)?", re.IGNORECASE)
 
 
 class ConfigError(Exception):
@@ -100,7 +101,7 @@ def walk(root: Path) -> tuple[list[Path], list[Path]]:
     for here, names, found in os.walk(root):
         names[:] = [n for n in names if not is_link(Path(here) / n)]
         folders += [Path(here) / name for name in names]
-        files += [Path(here) / name for name in found]
+        files += [Path(here) / name for name in found if not is_link(Path(here) / name)]
     return folders, files
 
 
@@ -126,13 +127,15 @@ def move_file(src: Path, dst: Path) -> None:
 
 
 def check_folder_name(name: str) -> None:
-    """案件名・区分名として使えるか（空・フォルダ名に使えない文字・index/log は不可）。"""
+    """案件名・区分名として使えるか（空・使えない文字・index/log・Windows の予約名は不可）。"""
     if not name.strip(" ."):
         raise ValueError(f"フォルダ名にできません（空）: {name!r}")
     if _FORBIDDEN.search(name):
         raise ValueError(f"フォルダ名にできません（使えない文字を含む）: {name!r}")
     if fold_name(name) in {"index", "log"}:
         raise ValueError(f"フォルダ名にできません（予約語 index・log）: {name!r}")
+    if _DEVICE_NAME.fullmatch(name):
+        raise ValueError(f"フォルダ名にできません（Windows の予約名）: {name!r}")
 
 
 def split_category(name: str) -> tuple[int | None, str]:

@@ -774,6 +774,18 @@ def test_移せないファイルはその1件だけerrorにして続ける(vaul
     ]
 
 
+def test_applyはdateのない項目も片づける(vault, data_dir):
+    make_txt(vault.base / "00_inbox" / "x.txt", TEXT)
+    items = prepare(vault, data_dir, NOW)["items"]
+    item = plan_item(items[0]["source"])
+    del item["date"]
+
+    (result,) = apply(vault, data_dir, {"items": [item]}, NOW)["results"]
+
+    assert result["status"] == "filed"
+    assert read_frontmatter(vault.base / result["note"])["date"] is None
+
+
 def test_ノートの絶対パスが259文字を超える資料は動かさずerror(vault, data_dir):
     make_txt(vault.base / "00_inbox" / "x.txt", TEXT)
     # 原本の絶対パスは 254 文字（259 以下）。ノートは .notes/ と .md の分で 264 文字になる
@@ -824,8 +836,9 @@ def test_移動先が240文字を超える資料はerror(vault, data_dir):
         ({"category": "99x_a."}, "末尾"),
         ({"category": "99_稟議"}, "98"),
         ({"project": "index"}, "予約語"),
+        ({"project": "AUX"}, "予約名"),
     ],
-    ids=["案件末尾ドット", "案件に区切り", "区分末尾ドット", "番号99", "予約語"],
+    ids=["案件末尾ドット", "案件に区切り", "区分末尾ドット", "番号99", "予約語", "Windowsの予約名"],
 )
 def test_不正なフォルダ名はその項目だけerrorで原本は動かない(vault, data_dir, override, expected):
     make_txt(vault.base / "00_inbox" / "x.txt", TEXT)

@@ -510,7 +510,7 @@ def _write_item_note(
         "category": place[1],
         "client": client,
         "doc_type": item["doc_type"],
-        "date": item["date"],
+        "date": item.get("date"),
         "sha256": sha,
         "size": size,
         "mtime_ns": mtime_ns,
@@ -616,7 +616,9 @@ def _apply_item(
         status = "filed"
         project, category = bundle.location(vault, original)  # _write_item_note で確かめてある
         client = bundle.canonical_client(clients, item["client"])
-        fields = "、".join(f for f in (item["doc_type"], client, item["date"] or "日付なし") if f)
+        fields = "、".join(
+            f for f in (item["doc_type"], client, item.get("date") or "日付なし") if f
+        )
         line = (
             f"**Filed** {original.name} → {project}/{category}（{fields}）"
             f" — 元: {source} / 先: {original}"

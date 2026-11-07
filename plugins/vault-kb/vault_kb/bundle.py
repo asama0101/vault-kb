@@ -277,9 +277,18 @@ def canonical_client(existing: list[str], raw: str) -> str:
 
 
 def link(target_rel: str, label: str) -> str:
-    """Markdown のリンク。`<>` で空白を許し、`>` と改行は % エンコードする。"""
+    """Markdown のリンク。`<>` で空白を許し、`>` と改行は % エンコードする。
+
+    ラベルは、改行を空白にし、円記号と角括弧をエスケープする。
+    """
     target = target_rel.replace(">", "%3E").replace("\n", "%0A")
-    escaped = label.replace("[", r"\[").replace("]", r"\]")
+    escaped = (
+        label.replace("\r", " ")
+        .replace("\n", " ")
+        .replace("\\", "\\\\")
+        .replace("[", r"\[")
+        .replace("]", r"\]")
+    )
     return f"[{escaped}](<{target}>)"
 
 
