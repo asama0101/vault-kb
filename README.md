@@ -17,6 +17,10 @@ Obsidian の vault（`vault-kb` フォルダ）の `00_inbox` に資料を置く
 | Claude Code | 導入済み | `claude --version` |
 | Python | 3.10 以上。`python` で起動できること | `python --version` |
 | Obsidian | `vault-kb` という名前のフォルダを vault にする（空でも既存でもよい）。テンプレートの Base を使うには、コアプラグイン「ベース」が使える版 | Obsidian の設定画面で版を見る |
+| ネットワーク | 専用環境をつくるとき、PyPI に接続できること | `/vault-kb:init` の診断 |
+| ライブラリ | `/vault-kb:init` が専用環境に自動で入れる（手で入れない） | `/vault-kb:init` の診断 |
+
+Python 以外の外部コマンドは要らない。ライブラリは markitdown と依存（約 300 MB。版は固定）で、出典とライセンスは `plugins/vault-kb/NOTICE` にある。
 
 vault のフォルダ名が `vault-kb` でないと、`/vault-kb:ask` と `/vault-kb:watch` の読み取りと計画ファイルの編集に、許可の確認が出る。
 
@@ -44,6 +48,21 @@ Claude Code で、次を実行する。
 2. vault のパス（`vault-kb` フォルダ）を聞く。絶対パスで答える。
 3. vault の中に、フォルダ構成（後述）を作る。
 4. `91_templates` にノートのテンプレート 7 種類、`92_bases` に Base（`その日のノート.base`）を置く。同名のファイルが既にあるときは、上書きしない。
+
+### 診断
+
+`/vault-kb:init` の最初と最後に、診断（`doctor`）が走る。何も変更せず、Python と専用環境の過不足を表示する。満たさないものがあると、不足の内容を出し、終了コード 3 で止まる。
+
+```
+OK  Python
+NG  専用環境: <不足の内容>
+```
+
+手で呼ぶときは、次を実行する（`<プラグインのフォルダ>` は `/plugin` で確かめる）。
+
+```
+python "<プラグインのフォルダ>/run.py" --data "<置き場>" doctor
+```
 
 ### 更新
 

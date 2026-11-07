@@ -1,0 +1,20 @@
+vault-kb
+
+このプラグインは、他所の文書・コードを取り込んでいない（自作）。
+
+実行時に、次のライブラリを PyPI から取得して使う（配布物には同梱しない）。
+版は requirements.txt で固定している。ライセンスは各パッケージの公開情報による。
+依存を変えたら、この表も更新する。
+
+| パッケージ | 版 | ライセンス |
+|---|---|---|
+| markitdown | 0.1.9 | MIT |
+| mammoth | 1.13.0 | BSD-2-Clause |
+| python-pptx | 1.0.2 | MIT |
+| openpyxl | 3.1.5 | MIT |
+| pdfplumber | 0.11.10 | MIT |
+| pdfminer.six | 20260107 | MIT |
+| pandas | 3.1.0 | BSD-3-Clause |
+| lxml | 6.1.3 | BSD-3-Clause |
+| beautifulsoup4 | 4.15.0 | MIT |
+| magika | 1.0.3 | Apache-2.0 |
