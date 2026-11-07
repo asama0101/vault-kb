@@ -115,6 +115,8 @@ def watch_events(
 ) -> Iterator[str]:
     """基準と違い、次の poll でも同じ（落ち着いた）なら "changed" を出す。rounds は上限回数。
 
+    別の片づけが進行中（ロックが生きている）の間は出さない。基準を進めずに待ち、終わったあとで出す。
+
     開始より後に書かれた停止の印があれば "stopped" を出して終わる（前の印は無視する）。
     """
     started = datetime.now().astimezone()
@@ -127,7 +129,8 @@ def watch_events(
             yield "stopped"
             return
         current = snapshot(vault)
-        if current != baseline and current == previous:
+        busy = _is_fresh(_lock_path(data_dir), datetime.now().astimezone())
+        if current != baseline and current == previous and not busy:
             yield "changed"
             baseline = current
         previous = current

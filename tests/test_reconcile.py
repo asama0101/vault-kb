@@ -12,7 +12,16 @@ from okf_check import check_bundle
 from sample_docs import make_pdf, make_txt
 from vault_kb import convert
 from vault_kb.bundle import read_frontmatter, write_indexes
-from vault_kb.reconcile import PLAN_NAME, Busy, acquire, apply, prepare, release, staging_path
+from vault_kb.reconcile import (
+    MAX_ITEMS,
+    PLAN_NAME,
+    Busy,
+    acquire,
+    apply,
+    prepare,
+    release,
+    staging_path,
+)
 
 NOW = datetime(2026, 10, 31, 12, 0, tzinfo=timezone.utc)
 TEXT = "これは二十字以上ある日本語の資料の本文です。確認用の文章。"
@@ -763,6 +772,39 @@ def test_移せないファイルはその1件だけerrorにして続ける(vaul
     assert result["done"] == [
         f"**Filed** b.txt → A社/01_見積（見積書、A社、2026-10-15） — 元: {src} / 先: {dst}"
     ]
+
+
+def test_ノートの絶対パスが259文字を超える資料は動かさずerror(vault, data_dir):
+    make_txt(vault.base / "00_inbox" / "x.txt", TEXT)
+    # 原本の絶対パスは 254 文字（259 以下）。ノートは .notes/ と .md の分で 264 文字になる
+    fixed = len(str(vault.base)) + len("/20_projects//01_見積/x.txt") + 1
+    project = "a" * (255 - fixed)
+    (item,) = run_apply(vault, data_dir, {"project": project, "category": "01_見積"})["results"]
+    assert item["status"] == "error"
+    assert "259" in item["message"]
+    assert (vault.base / "00_inbox" / "x.txt").exists()
+
+
+def test_prepareは件数の上限で打ち切り_残りをmoreで返し_次のprepareで続きを返す(vault, data_dir):
+    for i in range(25):
+        make_txt(vault.base / "00_inbox" / f"{i:02d}.txt", f"{TEXT}{i}")
+    first = prepare(vault, data_dir, NOW)
+    assert (len(first["items"]), first["more"]) == (MAX_ITEMS, 25 - MAX_ITEMS)
+    plan = {"items": [plan_item(i["source"], kind=i["kind"]) for i in first["items"]]}
+    assert {r["status"] for r in apply(vault, data_dir, plan, NOW)["results"]} == {"filed"}
+
+    second = prepare(vault, data_dir, NOW)
+
+    assert (len(second["items"]), second["more"]) == (25 - MAX_ITEMS, 0)
+
+
+def test_prepareは開けない資料が上限の枠を使わない(vault, data_dir):
+    for i in range(MAX_ITEMS + 1):
+        make_txt(vault.base / "00_inbox" / f"{i:02d}.txt", f"{TEXT}{i}")
+    with locked(vault.base / "00_inbox" / "00.txt"):
+        result = prepare(vault, data_dir, NOW)
+    assert (len(result["items"]), result["more"]) == (MAX_ITEMS, 0)
+    assert [e["source"] for e in result["errors"]] == ["00_inbox/00.txt"]
 
 
 def test_移動先が240文字を超える資料はerror(vault, data_dir):
