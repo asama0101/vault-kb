@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 from helpers import make_note, put
 from vault_kb import convert, watch
-from vault_kb.reconcile import acquire
+from vault_kb.reconcile import acquire, release
 from vault_kb.vault import Vault
 
 
@@ -119,6 +119,19 @@ def test_watch_eventsは新しいファイルが落ち着いた次のpollでchan
     sleep = counting_sleep({1: lambda: put(vault, "00_inbox/受信.txt")})
 
     assert list(watch.watch_events(vault, data_dir, sleep=sleep, rounds=4)) == ["changed"]
+
+
+def test_watch_eventsは別の片づけが進行中の間はchangedを出さず_終われば出す(vault, data_dir):
+    acquire(data_dir, datetime.now().astimezone())
+    sleep = counting_sleep(
+        {1: lambda: put(vault, "00_inbox/受信.txt"), 4: lambda: release(data_dir)}
+    )
+
+    events = []
+    for event in watch.watch_events(vault, data_dir, sleep=sleep, rounds=6):
+        events.append((event, (data_dir / "reconcile.lock").exists()))
+
+    assert events == [("changed", False)]
 
 
 def test_watch_eventsは変化がなければ何も出さない(vault, data_dir):

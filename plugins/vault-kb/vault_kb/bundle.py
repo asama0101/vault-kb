@@ -20,7 +20,7 @@ from vault_kb.vault import (
     NOTES_NAME,
     OKF_VERSION,
     PROJECT_ROOTS,
-    RESERVED_NAMES,
+    RESERVED_FOLDED,
     SHARED_NAME,
     SHARED_PROJECT,
     Vault,
@@ -50,7 +50,6 @@ NOTE_KEYS = (
     "mtime_ns",
     "readable",
 )
-_RESERVED_FOLDED = {fold_name(name) for name in RESERVED_NAMES}
 _HEAD_BYTES = 64 * 1024
 _KEY_LINE = re.compile(r"([^:\s][^:]*):\s*(.*)")
 _SHA256 = re.compile(r"[0-9a-f]{64}")
@@ -200,7 +199,7 @@ def notes(vault: Vault) -> list[Note]:
     found = []
     _, files = walk(vault.notes_dir)
     for path in sorted(files):
-        if path.suffix.lower() != ".md" or fold_name(path.name) in _RESERVED_FOLDED:
+        if path.suffix.lower() != ".md" or fold_name(path.name) in RESERVED_FOLDED:
             continue
         meta = read_frontmatter(path)
         if is_note(meta):
@@ -319,6 +318,16 @@ def _prune_indexes(vault: Vault) -> None:
             folder.rmdir()
 
 
+def _write_index(path: Path, text: str) -> None:
+    """索引を書く。中身が同じなら書かない（更新日時を変えず、同期の通信を増やさない）。"""
+    try:
+        if path.read_bytes() == text.encode("utf-8"):
+            return
+    except OSError:
+        pass
+    atomic_write(path, text)
+
+
 def write_indexes(vault: Vault) -> None:
     """根の index.md と、notes_dir の案件・区分の index.md を作り直す。"""
     vault.hide_notes_dir()
@@ -341,10 +350,10 @@ def write_indexes(vault: Vault) -> None:
                 f"- {link(f'{category}/index.md', category)} — {len(in_category)} 件\n"
             )
             lines = "".join(f"{_note_line(n, cat_folder)}\n" for n in _sorted_notes(in_category))
-            atomic_write(cat_folder / "index.md", f"# {project} / {category}\n\n{lines}")
-        atomic_write(notes_folder / "index.md", f"# {project}\n\n{''.join(project_lines)}")
+            _write_index(cat_folder / "index.md", f"# {project} / {category}\n\n{lines}")
+        _write_index(notes_folder / "index.md", f"# {project}\n\n{''.join(project_lines)}")
     head = f'---\nokf_version: "{OKF_VERSION}"\n---\n# vault-kb\n\n'
-    atomic_write(vault.base / "index.md", head + "".join(root_lines))
+    _write_index(vault.base / "index.md", head + "".join(root_lines))
 
 
 def _prune_log(text: str, today: datetime) -> str:

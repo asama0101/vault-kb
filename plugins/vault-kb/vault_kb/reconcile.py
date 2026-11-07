@@ -36,6 +36,8 @@ from .vault import (
 LOCK_STALE_SECONDS = 900
 MAX_PATH_LEN = 240
 EXCERPT_CHARS = 4000  # Claude が判断に使う本文の長さ（staging の Read には確認が出る）
+MAX_ITEMS = 20  # 1 回の prepare が返す項目の上限（抜粋が多すぎると Claude が受け取れない）
+MAX_ABS_PATH = 259  # Windows の MAX_PATH（260）から終端を除いた長さ
 PLAN_NAME = ".vault-kb-plan.json"  # vault の直下。. 始まりなので走査が無視する
 _PREVIOUS_KEYS = ("title", "description", "tags", "client", "doc_type", "date")
 _NOT_CONVERTED = "変換結果がありません（原本が変わった可能性）。次回に回します"
@@ -72,6 +74,8 @@ def _is_fresh(path: Path, now: datetime) -> bool:
 def acquire(data_dir: Path, now: datetime) -> None:
     """ロックを取る。進行中（15 分未満）なら Busy。古い・読めないロックは消して取り直す。"""
     path = _lock_path(data_dir)
+    # shortcut: 古いロックの引き継ぎは、2 本が同時に「古い」と見ると両方が取れる。
+    # 落ちたロックが残った直後に、ask と見張りが同時に動くときだけ。同名の保留があるので壊れはしない
     busy = Busy("別の片づけが進行中です。15 分後にもう一度試してください。")
     try:
         _create_lock(path, now)
@@ -308,8 +312,12 @@ def _collect(
     data_dir: Path,
     done: list[str],
     errors: list[dict[str, str]],
-) -> list[Item]:
-    """直せるものを直し（done に記録）、判断が要る項目を変換して返す。"""
+) -> tuple[list[Item], int]:
+    """直せるものを直し（done に記録）、判断が要る項目を変換して返す。
+
+    変換するのは MAX_ITEMS 件まで（開けなかった項目は数えない）。残りの件数も返す。
+    shortcut: apply で毎回 error になる項目が MAX_ITEMS 件以上あると、後ろの資料は返らない。
+    """
     shas: _ShaCache = {}
     all_notes = bundle.notes(vault)
     orphans = [n for n in all_notes if not n.original.is_file()]
@@ -324,15 +332,17 @@ def _collect(
     items += [_item(vault, p, "inbox") for _, p in bundle.project_root_files(vault)]
     items += [_item(vault, p, "unregistered") for p in unregistered]
 
-    converted = []
-    for item in items:
+    converted: list[Item] = []
+    for number, item in enumerate(items):
+        if len(converted) == MAX_ITEMS:
+            return converted, len(items) - number
         try:
             _convert_item(vault, data_dir, item, shas)
         except OSError as error:
             _report(errors, item["source"], error)
         else:
             converted.append(item)
-    return converted
+    return converted, 0
 
 
 def _warnings(vault: Vault) -> list[str]:
@@ -359,7 +369,7 @@ def _prepare(vault: Vault, data_dir: Path, now: datetime) -> dict[str, Any]:
     done: list[str] = []
     errors: list[dict[str, str]] = []
     try:
-        items = _collect(vault, data_dir, done, errors)
+        items, more = _collect(vault, data_dir, done, errors)
     finally:
         if done:
             bundle.append_log(vault, done, now)
@@ -369,6 +379,7 @@ def _prepare(vault: Vault, data_dir: Path, now: datetime) -> dict[str, Any]:
     return {
         "vault": str(vault.base),
         "items": items,
+        "more": more,
         "context": _context(vault),
         "done": done,
         "errors": errors,
@@ -581,6 +592,9 @@ def _apply_item(
             }, None
         if len(vault.rel(original)) > MAX_PATH_LEN:
             raise ValueError(f"パスが {MAX_PATH_LEN} 文字を超えます: {vault.rel(original)}")
+        longest = max(len(str(original)), len(str(vault.note_path(original))))
+        if longest > MAX_ABS_PATH:  # ノートは .notes/ と .md の分だけ原本より長い
+            raise ValueError(f"ノートを含む絶対パスが {MAX_ABS_PATH} 文字を超えます: {original}")
     if item["kind"] != "changed":
         _guard_note(vault, vault.note_path(original))
     converted = _converted(data_dir, sha)  # 動かす前に確かめる

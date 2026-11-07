@@ -43,7 +43,6 @@ SUPPORTED_EXTENSIONS = {
     ".htm",
 }
 RESERVED_NAMES = {"index.md", "log.md"}
-SCHEMA_VERSION = 1
 MAX_CATEGORY_NUMBER = 98
 
 _FORBIDDEN = re.compile(r'[\\/:*?"<>|\x00-\x1f]')
@@ -64,7 +63,7 @@ def fold_name(name: str) -> str:
     return unicodedata.normalize("NFC", name).casefold()
 
 
-_RESERVED_FOLDED = {fold_name(name) for name in RESERVED_NAMES}
+RESERVED_FOLDED = {fold_name(name) for name in RESERVED_NAMES}
 
 
 def is_ignored(name: str) -> bool:
@@ -72,7 +71,7 @@ def is_ignored(name: str) -> bool:
     return (
         name.startswith((".", "~$"))
         or name.lower() in _IGNORED_NAMES
-        or fold_name(name) in _RESERVED_FOLDED
+        or fold_name(name) in RESERVED_FOLDED
     )
 
 
@@ -258,7 +257,7 @@ def install_obsidian_assets(root: Path) -> None:
 
 
 def save_config(data_dir: Path, vault_root: Path) -> None:
-    config = {"schema_version": SCHEMA_VERSION, "vault": str(vault_root)}
+    config = {"vault": str(vault_root)}
     (data_dir / "config.json").write_text(
         json.dumps(config, ensure_ascii=False, indent=2), encoding="utf-8"
     )

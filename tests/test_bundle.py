@@ -1,3 +1,4 @@
+import os
 import shutil
 from datetime import datetime
 
@@ -532,3 +533,38 @@ def test_notesは予約名を大文字小文字の違いでもノートとして
         b'---\ntype: document\nresource: "a.txt"\n---\n',
     )
     assert notes(vault) == []
+
+
+def test_write_indexesは中身が同じ索引を書き直さない(vault):
+    make_note(vault, "A", "01_x", "a.txt")
+    write_indexes(vault)
+    indexes = [vault.base / "index.md", *vault.notes_dir.rglob("index.md")]
+    assert len(indexes) >= 3
+    for path in indexes:
+        os.utime(path, ns=(1_000_000_000, 1_000_000_000))
+
+    write_indexes(vault)
+
+    assert {p.stat().st_mtime_ns for p in indexes} == {1_000_000_000}
+
+
+def test_write_indexesは中身が変われば索引を書き直す(vault):
+    make_note(vault, "A", "01_x", "a.txt")
+    write_indexes(vault)
+    index = vault.notes_dir / "20_projects" / "A" / "01_x" / "index.md"
+    os.utime(index, ns=(1_000_000_000, 1_000_000_000))
+
+    make_note(vault, "A", "01_x", "b.txt")
+    write_indexes(vault)
+
+    assert "b.txt" in index.read_text(encoding="utf-8")
+
+
+def test_write_indexesはUTF8で読めない索引も上書きして直す(vault):
+    make_note(vault, "A", "01_x", "a.txt")
+    write_indexes(vault)
+    (vault.base / "index.md").write_bytes("# 壊れた".encode("cp932"))
+
+    write_indexes(vault)
+
+    assert "vault-kb" in (vault.base / "index.md").read_text(encoding="utf-8")
