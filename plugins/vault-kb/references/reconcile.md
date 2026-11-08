@@ -34,9 +34,9 @@
    - `doc_type`: 資料の種類（見積書、基本設計書、議事録など）。
    - `date`: 本文にある資料の日付を `YYYY-MM-DD` で。分からなければ null。
    - `readable` が false のとき: 本文は読まない。`description` に `reason` をそのまま書く。`title` は `name` から付ける。`tags` は空でよい。`kind` が `inbox` なら、案件は `shared`、区分は `99_その他` にする。ただし、名前から案件が明らかなときは、その案件の `99_その他` にする。
-3. 計画を、`prepare` が返した `plan_path`（`<vault>/.vault-kb-plan.json` の絶対パス）のファイルに、Write ツールで書く。パスは `plan_path` の値のまま（`/` 区切り）で使う。`\` に書き換えない。既にあるかは調べない。Write が「先に Read が必要」と言ったら、Read してから Write する。形は次のとおり。`project` と `category` は `kind` が `inbox` の項目だけに使われる。
+3. 計画を、`prepare` が返した `plan_path`（`<vault>/.vault-kb-plan.json` の絶対パス）のファイルに、Write ツールで書く。パスは `plan_path` の値のまま（`/` 区切り）で使う。`\` に書き換えない。既にあるかは調べない。Write が「先に Read が必要」と言ったら、Read してから Write する。形は次のとおり。`lock_token` は、`prepare` の結果の `lock_token` をそのまま書き写す（`apply` が、自分が取ったロックだけを解くため。変えない）。`project` と `category` は `kind` が `inbox` の項目だけに使われる。
 
-       {"items": [{"source": "…", "kind": "inbox", "project": "…", "category": "…",
+       {"lock_token": "…", "items": [{"source": "…", "kind": "inbox", "project": "…", "category": "…",
                    "title": "…", "description": "…", "tags": ["…"],
                    "client": "…", "doc_type": "…", "date": "2026-01-31"}]}
 

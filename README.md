@@ -209,6 +209,7 @@ claude plugin uninstall vault-kb@vault-kb
 - zip・png・csv など対象外の形式や、文字を取り出せない資料は、置き場所だけ決めて置かれ、ノートの `readable: false` で示される。検索・質問では「文字を取り出せていない」と添えられる。
 - 改訂版は、同じフォルダに並ぶだけで、旧版のフォルダは作らない。
 - `.md` も資料として片づく。ノートは `<原本の名前>.md.md` になり、`.md` の原本は書き換えない。
+- `20_projects`・`80_archive`・`30_shared`・`40_knowledge` 自体がリンク（ジャンクション）のときは、リンクの先を走査しない（先が vault の外のことがあるため）。`20_projects`・`80_archive` のときは、片づけの報告に警告が出る。
 - 同じ名前の案件が `20_projects` と `80_archive` にあるときは、`20_projects` が先に使われる。案件名 `shared`・`knowledge` は、`30_shared`・`40_knowledge` の名前なので、`20_projects` には作らない。
 
 ### 検索・質問のしかた

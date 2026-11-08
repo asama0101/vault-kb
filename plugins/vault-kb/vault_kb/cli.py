@@ -16,6 +16,7 @@ from typing import Any
 from . import bundle, conflict, lock, reconcile, watch
 from .vault import (
     ConfigError,
+    Vault,
     VaultNotFound,
     atomic_write,
     init_vault,
@@ -98,6 +99,19 @@ def _configure(data_dir: Path, vault_arg: str) -> dict[str, Any]:
     return {"vault": str(vault.root)}
 
 
+def _plan_lock_token(vault: Vault) -> str | None:
+    """計画ファイルの lock_token（apply の失敗後の release が、自分のロックだけを解くため）。
+
+    計画がない・読めない・印がないときは None（従来どおり、無条件に解く）。
+    """
+    try:
+        token = json.loads((vault.root / reconcile.PLAN_NAME).read_text(encoding="utf-8"))
+        token = token.get("lock_token")
+    except (OSError, ValueError, AttributeError):
+        return None
+    return token if isinstance(token, str) else None
+
+
 def _run(args: argparse.Namespace, data_dir: Path) -> dict[str, Any] | list[Any] | None:
     """サブコマンドを実行し、JSON にする結果を返す（watch は None）。"""
     if args.command == "configure":
@@ -118,7 +132,7 @@ def _run(args: argparse.Namespace, data_dir: Path) -> dict[str, Any] | list[Any]
         except OSError as error:  # 後処理の失敗。処理した資料は log.md に残っている
             raise _ApplyFailed(str(error)) from error
     if args.command == "release":
-        lock.release(data_dir)
+        lock.release(data_dir, _plan_lock_token(vault))
         return {"released": True}
     if args.command == "reindex":
         bundle.write_indexes(vault)
@@ -141,7 +155,7 @@ def _run(args: argparse.Namespace, data_dir: Path) -> dict[str, Any] | list[Any]
         try:
             bundle.append_log(vault, [conflict.resolve(vault, args.source, args.action)], now)
         finally:
-            lock.release(data_dir)
+            lock.release(data_dir, lock.token_of(now))
         return {"resolved": args.action, "source": args.source}
     for line in watch.watch_events(vault, data_dir):  # watch
         print(line, flush=True)
