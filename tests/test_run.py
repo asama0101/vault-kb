@@ -27,15 +27,18 @@ def run(
     utf8_mode=True,
     python=BASE_PYTHON,
     env_extra=None,
-    flags=("-s",),
+    flags=None,
     offline=True,
 ):
     """run.py を実行する。既定は、パッケージの入っていない Python（システムが空の状態）。
 
-    flags の既定 -s は、ユーザー領域のパッケージを見ない指定。
+    flags の既定は、ベースの Python なら -S（site を読まない。グローバルに入っているライブラリも
+    見えない空の状態）、それ以外なら -s（ユーザー領域のライブラリを見ない）。
     offline の既定は、届かないプロキシを指定して、実ネットワークに出ないようにする
     （実インストールを行う slow テストだけ False にする）。
     """
+    if flags is None:
+        flags = ("-S",) if python == BASE_PYTHON else ("-s",)
     env = {k: v for k, v in os.environ.items() if k not in ("VAULT_KB_HOME", "PYTHONUTF8")}
     if utf8_mode:
         env["PYTHONUTF8"] = "1"
@@ -60,6 +63,13 @@ def make_light_env(data: Path) -> None:
     subprocess.run([sys.executable, "-m", "venv", "--without-pip", str(data / "venv")], check=True)
     marker = hashlib.sha256((PLUGIN / "requirements.txt").read_bytes().replace(b"\r\n", b"\n"))
     (data / "venv-requirements.sha256").write_text(marker.hexdigest(), encoding="utf-8")
+
+
+def empty_venv_python(directory: Path) -> str:
+    """ライブラリの入っていない仮想環境の Python（どの環境で動かしても、空の状態）。"""
+    directory.mkdir(exist_ok=True)
+    make_light_env(directory)
+    return str(directory / "venv" / "Scripts" / "python.exe")
 
 
 def test_置き場が決まらないとき終了コード2で_data_の付け方を案内する():
@@ -107,13 +117,13 @@ def test_UTF8モードでなくても標準出力と標準エラーはUTF8で出
     env["PYTHONIOENCODING"] = "cp932"  # 日本語 Windows のコンソール相当を強制する
 
     doctor = subprocess.run(
-        [BASE_PYTHON, "-s", str(RUN), "--data", str(tmp_path / "data"), "doctor"],
+        [BASE_PYTHON, "-S", str(RUN), "--data", str(tmp_path / "data"), "doctor"],
         capture_output=True,
         env=env,
         check=False,
     )
     scan = subprocess.run(
-        [BASE_PYTHON, "-s", str(RUN), "--data", str(tmp_path / "data"), "status"],
+        [BASE_PYTHON, "-S", str(RUN), "--data", str(tmp_path / "data"), "status"],
         capture_output=True,
         env=env,
         check=False,
@@ -233,7 +243,7 @@ def python_first(python) -> dict:
 
 def fake_python(directory: Path, body: str) -> dict:
     """`python` コマンドを、指定の動作のバッチファイルに差し替える PATH を返す。"""
-    directory.mkdir()
+    directory.mkdir(exist_ok=True)
     (directory / "python.bat").write_text(body, encoding="utf-8")
     return {"PATH": os.pathsep.join([str(directory), os.environ["PATH"]])}
 
@@ -484,7 +494,7 @@ def test_仮想環境の中ではsystem指定のsetupを終了コード3で断�
         "--mode",
         "system",
         "--yes",
-        python=sys.executable,
+        python=empty_venv_python(tmp_path / "light"),
     )
 
     assert result.returncode == 3
@@ -531,7 +541,7 @@ def test_run_pyを読み込むだけでは重い標準ライブラリを読み�
     )
 
     result = subprocess.run(
-        [BASE_PYTHON, "-s", "-c", code, str(RUN)],
+        [BASE_PYTHON, "-S", "-c", code, str(RUN)],
         capture_output=True,
         text=True,
         encoding="utf-8",
@@ -564,11 +574,15 @@ def test_doctorはpythonコマンドが起動できないときNGと対処を出
 
 
 @requires_pinned_system
-def test_システムのPythonを使うときフックのpythonが別ならNGで両方のパスを示す(tmp_path):
+def test_システムのPythonを使うときフックのpythonが別ならNGで両方のパスを示す(
+    tmp_path, tmp_path_factory
+):
     data = tmp_path / "data"
     data.mkdir()
     configure_vault(data, tmp_path / "vault")
-    body = f"""@"{BASE_PYTHON}" %*
+    # .bat の中のパスに日本語が入ると、cmd が読めない。ASCII だけのフォルダに作る
+    other = empty_venv_python(tmp_path_factory.mktemp("light"))  # sys.executable とは別の Python
+    body = f"""@"{other}" %*
 """
 
     result = run(
@@ -576,12 +590,12 @@ def test_システムのPythonを使うときフックのpythonが別ならNGで
         "--data",
         str(data),
         python=sys.executable,
-        env_extra=fake_python(tmp_path / "bin", body),
+        env_extra=fake_python(tmp_path_factory.mktemp("bin"), body),
     )
 
     assert result.returncode == 3
     assert "NG  python コマンド" in result.stdout
-    assert BASE_PYTHON in result.stdout
+    assert "フックが使う python は" in result.stdout
     assert sys.executable in result.stdout
 
 
@@ -602,7 +616,8 @@ def test_pipが成功しても読み込めなければsetupは失敗を報告す
         return real_run(command, *args, **kwargs)
 
     monkeypatch.setattr(module.subprocess, "run", pip_succeeds)
-    monkeypatch.setattr(module.sys, "executable", BASE_PYTHON)  # 固定版の入っていない Python
+    empty = empty_venv_python(tmp_path / "light")  # 固定版の入っていない Python
+    monkeypatch.setattr(module.sys, "executable", empty)
     monkeypatch.setattr(module.sys, "prefix", module.sys.base_prefix)  # 仮想環境の外とみなす
 
     code = module._setup_system(tmp_path / "data", approved=True)
