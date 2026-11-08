@@ -3,15 +3,16 @@
 import os
 import shutil
 import subprocess
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
 from helpers import put
 from vault_kb import bundle, watch
-from vault_kb.reconcile import apply, prepare, release
+from vault_kb.lock import release
+from vault_kb.reconcile import apply, prepare
 from vault_kb.vault import init_vault, install_obsidian_assets
 
-NOW = datetime(2026, 10, 31, 12, 0, tzinfo=timezone.utc)
+NOW = datetime(2026, 10, 31, 12, 0, tzinfo=UTC)
 TEXT = "これは二十字以上ある日本語の資料の本文です。確認用の文章。".encode()
 
 
@@ -52,11 +53,11 @@ def test_init_vaultはvaultの中に8つのフォルダを作りvault_kbは作�
 
 
 def test_project_foldersは4つの置き場の案件を順に返し他のフォルダは案件にしない(vault):
-    (vault.base / "20_projects" / "B社" / "01_見積").mkdir(parents=True)
-    (vault.base / "20_projects" / ".hidden").mkdir()
-    (vault.base / "80_archive" / "A社").mkdir()
-    (vault.base / "Z社").mkdir()
-    (vault.base / "10_daily" / "日報").mkdir()
+    (vault.root / "20_projects" / "B社" / "01_見積").mkdir(parents=True)
+    (vault.root / "20_projects" / ".hidden").mkdir()
+    (vault.root / "80_archive" / "A社").mkdir()
+    (vault.root / "Z社").mkdir()
+    (vault.root / "10_daily" / "日報").mkdir()
 
     assert [name for name, _ in vault.project_folders()] == ["B社", "A社", "shared", "knowledge"]
     assert bundle.projects(vault) == ["A社", "B社", "knowledge", "shared"]
@@ -113,8 +114,8 @@ def test_00_inboxの資料は20_projectsの案件と区分へ移りノートはn
     result = _file(vault, data_dir, "A社", "見積")
 
     assert [r["status"] for r in result["results"]] == ["filed"]
-    assert (vault.base / "20_projects" / "A社" / "01_見積" / "見積.txt").is_file()
-    assert list((vault.base / "00_inbox").iterdir()) == []
+    assert (vault.root / "20_projects" / "A社" / "01_見積" / "見積.txt").is_file()
+    assert list((vault.root / "00_inbox").iterdir()) == []
     meta = bundle.read_frontmatter(vault.notes_dir / "20_projects/A社/01_見積/見積.txt.md")
     assert (meta["resource"], meta["project"], meta["category"]) == (
         "20_projects/A社/01_見積/見積.txt",
@@ -133,20 +134,20 @@ def test_30_shared直下のファイルは案件sharedのinboxになる(vault, d
     release(data_dir)
     _file(vault, data_dir, "shared", "99_その他")
 
-    assert (vault.base / "30_shared" / "99_その他" / "規程.txt").is_file()
+    assert (vault.root / "30_shared" / "99_その他" / "規程.txt").is_file()
     meta = bundle.read_frontmatter(vault.notes_dir / "30_shared/99_その他/規程.txt.md")
     assert (meta["resource"], meta["project"]) == ("30_shared/99_その他/規程.txt", "shared")
 
 
 def test_80_archiveにある案件を指定すると80_archiveの中へ片づけ索引に印が付く(vault, data_dir):
-    (vault.base / "80_archive" / "旧案件" / "01_見積").mkdir(parents=True)
+    (vault.root / "80_archive" / "旧案件" / "01_見積").mkdir(parents=True)
     put(vault, "00_inbox/見積.txt", TEXT)
 
     _file(vault, data_dir, "旧案件", "見積")
 
-    assert (vault.base / "80_archive" / "旧案件" / "01_見積" / "見積.txt").is_file()
-    assert not (vault.base / "20_projects" / "旧案件").exists()
-    index = (vault.base / "index.md").read_text(encoding="utf-8")
+    assert (vault.root / "80_archive" / "旧案件" / "01_見積" / "見積.txt").is_file()
+    assert not (vault.root / "20_projects" / "旧案件").exists()
+    index = (vault.root / "index.md").read_text(encoding="utf-8")
     assert "- [旧案件（アーカイブ）](<.notes/80_archive/旧案件/index.md>) — 1 件\n" in index
 
 
@@ -157,7 +158,7 @@ def test_案件を80_archiveへ動かすとノートが追従し_新しい資料
     _file(vault, data_dir, "A社", "見積")
     assert "A社" in prepare(vault, data_dir, NOW)["context"]["projects"]
 
-    (vault.base / "20_projects" / "A社").rename(vault.base / "80_archive" / "A社")
+    (vault.root / "20_projects" / "A社").rename(vault.root / "80_archive" / "A社")
     result = prepare(vault, data_dir, NOW)
 
     assert result["items"] == []
@@ -188,11 +189,11 @@ def test_リンクの案件と30_shared_40_knowledgeは案件にならず走査�
     outside = tmp_path / "外" / "X社" / "01_x"
     outside.mkdir(parents=True)
     (outside / "a.txt").write_bytes(TEXT)
-    _junction(vault.base / "20_projects" / "X社", outside.parent)
-    shutil.rmtree(vault.base / "30_shared")
-    _junction(vault.base / "30_shared", outside.parent)
-    shutil.rmtree(vault.base / "40_knowledge")
-    _junction(vault.base / "40_knowledge", outside.parent)
+    _junction(vault.root / "20_projects" / "X社", outside.parent)
+    shutil.rmtree(vault.root / "30_shared")
+    _junction(vault.root / "30_shared", outside.parent)
+    shutil.rmtree(vault.root / "40_knowledge")
+    _junction(vault.root / "40_knowledge", outside.parent)
 
     assert bundle.projects(vault) == []
     assert watch.snapshot(vault) == {}
@@ -203,8 +204,8 @@ def test_リンクの案件と30_shared_40_knowledgeは案件にならず走査�
 def test_init_vaultはリンクの30_shared_40_knowledgeの先に99_その他を作らない(vault, tmp_path, name):
     outside = tmp_path / "外"
     outside.mkdir()
-    shutil.rmtree(vault.base / name)
-    _junction(vault.base / name, outside)
+    shutil.rmtree(vault.root / name)
+    _junction(vault.root / name, outside)
 
     init_vault(vault.root)
 
@@ -215,8 +216,8 @@ def test_00_inboxがリンクのとき中のファイルは片づけの対象に
     outside = tmp_path / "外"
     outside.mkdir()
     (outside / "g.txt").write_bytes(TEXT)
-    (vault.base / "00_inbox").rmdir()
-    _junction(vault.base / "00_inbox", outside)
+    (vault.root / "00_inbox").rmdir()
+    _junction(vault.root / "00_inbox", outside)
 
     assert bundle.inbox_files(vault) == []
     assert watch.snapshot(vault) == {}
@@ -246,13 +247,13 @@ def _broken_junction(link, tmp_path):
 
 @pytest.mark.parametrize("name", ["00_inbox", "30_shared", "40_knowledge"])
 def test_init_vaultは壊れたリンクのフォルダがあっても落ちず何も作らない(vault, tmp_path, name):
-    shutil.rmtree(vault.base / name)
-    _broken_junction(vault.base / name, tmp_path)
+    shutil.rmtree(vault.root / name)
+    _broken_junction(vault.root / name, tmp_path)
 
     init_vault(vault.root)
 
-    assert not (vault.base / name).exists()
-    assert (vault.base / "20_projects").is_dir()
+    assert not (vault.root / name).exists()
+    assert (vault.root / "20_projects").is_dir()
 
 
 def test_テンプレートの置き場が壊れたリンクでも落ちず他のフォルダには置く(tmp_path):
@@ -272,15 +273,15 @@ def test_移動先が壊れたリンクなら_リンクだと伝えて原本も�
     vault, data_dir, tmp_path, broken
 ):
     put(vault, "00_inbox/見積.txt", TEXT)
-    (vault.base / broken).parent.mkdir(exist_ok=True)  # 区分が壊れているときは、案件は実在する
-    _broken_junction(vault.base / broken, tmp_path)
+    (vault.root / broken).parent.mkdir(exist_ok=True)  # 区分が壊れているときは、案件は実在する
+    _broken_junction(vault.root / broken, tmp_path)
 
     result = _file(vault, data_dir, "X社", "見積")["results"][0]
 
     assert result["status"] == "error"
     assert result["message"] == f"移動先がリンクです: {broken}"
-    assert (vault.base / "00_inbox" / "見積.txt").is_file()
-    assert os.path.lexists(vault.base / broken)
+    assert (vault.root / "00_inbox" / "見積.txt").is_file()
+    assert os.path.lexists(vault.root / broken)
 
 
 def test_40_knowledge直下の資料は区分へ移りノートは_notes_40_knowledgeにできる(vault, data_dir):
@@ -294,15 +295,15 @@ def test_40_knowledge直下の資料は区分へ移りノートは_notes_40_know
     result = _file(vault, data_dir, "knowledge", "手順")
 
     assert [r["status"] for r in result["results"]] == ["filed"]
-    assert (vault.base / "40_knowledge" / "01_手順" / "手順メモ.txt").is_file()
-    assert not (vault.base / "40_knowledge" / "手順メモ.txt").exists()
+    assert (vault.root / "40_knowledge" / "01_手順" / "手順メモ.txt").is_file()
+    assert not (vault.root / "40_knowledge" / "手順メモ.txt").exists()
     meta = bundle.read_frontmatter(vault.notes_dir / "40_knowledge/01_手順/手順メモ.txt.md")
     assert (meta["resource"], meta["project"], meta["category"]) == (
         "40_knowledge/01_手順/手順メモ.txt",
         "knowledge",
         "01_手順",
     )
-    assert "knowledge" in (vault.base / "index.md").read_text(encoding="utf-8")
+    assert "knowledge" in (vault.root / "index.md").read_text(encoding="utf-8")
     assert (vault.notes_dir / "40_knowledge" / "01_手順" / "index.md").is_file()
 
 
@@ -325,6 +326,6 @@ def test_00_inboxの資料を案件knowledgeに指定すると40_knowledgeに置
     result = _file(vault, data_dir, "KNOWLEDGE", "99_その他")
 
     assert [r["status"] for r in result["results"]] == ["filed"]
-    assert (vault.base / "40_knowledge" / "99_その他" / "ノウハウ.txt").is_file()
-    assert not (vault.base / "20_projects" / "KNOWLEDGE").exists()
-    assert not (vault.base / "20_projects" / "knowledge").exists()
+    assert (vault.root / "40_knowledge" / "99_その他" / "ノウハウ.txt").is_file()
+    assert not (vault.root / "20_projects" / "KNOWLEDGE").exists()
+    assert not (vault.root / "20_projects" / "knowledge").exists()

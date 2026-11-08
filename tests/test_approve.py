@@ -205,6 +205,18 @@ def test_vaultが未設定なら計画ファイルを許可しない(tmp_path):
     assert result.stdout == ""
 
 
+def test_vaultが空文字の設定なら作業フォルダの計画ファイルも許可しない(tmp_path):
+    data = tmp_path / "data"
+    data.mkdir()
+    (data / "config.json").write_text(json.dumps({"vault": ""}), encoding="utf-8")
+    cwd_plan = Path.cwd() / ".vault-kb-plan.json"  # Path("") は現在のフォルダを指してしまう
+
+    result = approve(data, "Write", {"file_path": str(cwd_plan)})
+
+    assert result.returncode == 0
+    assert result.stdout == ""
+
+
 def test_Monitorはwatchのコマンドだけを許可する(env):
     data, _, head = env
 

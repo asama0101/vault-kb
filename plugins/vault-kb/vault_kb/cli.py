@@ -13,7 +13,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from . import bundle, conflict, reconcile, watch
+from . import bundle, conflict, lock, reconcile, watch
 from .vault import (
     ConfigError,
     VaultNotFound,
@@ -92,7 +92,7 @@ def _configure(data_dir: Path, vault_arg: str) -> dict[str, Any]:
     install_obsidian_assets(root)
     save_config(data_dir, vault.root)
     bundle.write_indexes(vault)
-    log = vault.base / "log.md"
+    log = vault.root / "log.md"
     if not log.exists():
         atomic_write(log, "")
     return {"vault": str(vault.root)}
@@ -109,7 +109,7 @@ def _run(args: argparse.Namespace, data_dir: Path) -> dict[str, Any] | list[Any]
     if args.command == "prepare":
         try:
             return reconcile.prepare(vault, data_dir, now)
-        except reconcile.Busy:
+        except lock.Busy:
             return {"busy": True}
     if args.command == "apply":
         plan = json.loads(Path(args.plan).read_text(encoding="utf-8"))
@@ -118,7 +118,7 @@ def _run(args: argparse.Namespace, data_dir: Path) -> dict[str, Any] | list[Any]
         except OSError as error:  # 後処理の失敗。処理した資料は log.md に残っている
             raise _ApplyFailed(str(error)) from error
     if args.command == "release":
-        reconcile.release(data_dir)
+        lock.release(data_dir)
         return {"released": True}
     if args.command == "reindex":
         bundle.write_indexes(vault)
@@ -135,13 +135,13 @@ def _run(args: argparse.Namespace, data_dir: Path) -> dict[str, Any] | list[Any]
         return conflict.listing(vault)
     if args.command == "resolve":
         try:
-            reconcile.acquire(data_dir, now)
-        except reconcile.Busy:
+            lock.acquire(data_dir, now)
+        except lock.Busy:
             return {"busy": True}
         try:
             bundle.append_log(vault, [conflict.resolve(vault, args.source, args.action)], now)
         finally:
-            reconcile.release(data_dir)
+            lock.release(data_dir)
         return {"resolved": args.action, "source": args.source}
     for line in watch.watch_events(vault, data_dir):  # watch
         print(line, flush=True)

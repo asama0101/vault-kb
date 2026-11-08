@@ -35,7 +35,7 @@ def test_note_textはNOTE_KEYSの順にJSONで書き_read_frontmatterで同じ�
         "size": 12,
         "title": '見積 "A"',
     }
-    path = vault.base / "20_projects" / "A" / "01_x" / "見積.xlsx.md"
+    path = vault.root / "20_projects" / "A" / "01_x" / "見積.xlsx.md"
     write_note(path, meta, "# 見出し\n本文\n")
 
     lines = path.read_text(encoding="utf-8").split("\n")
@@ -95,7 +95,7 @@ def test_notesはtypeがdocumentでresourceのあるmdだけを返す(vault):
     found = notes(vault)
 
     assert [n.path for n in found] == [good]
-    assert found[0].original == vault.base / "20_projects" / "A" / "01_x" / "見積.xlsx"
+    assert found[0].original == vault.root / "20_projects" / "A" / "01_x" / "見積.xlsx"
     assert found[0].meta["resource"] == "20_projects/A/01_x/見積.xlsx"
 
 
@@ -263,7 +263,7 @@ def test_write_indexesは根にokf_version_案件と区分の一覧_区分はdat
 
     write_indexes(vault)
 
-    root = (vault.base / "index.md").read_text(encoding="utf-8")
+    root = (vault.root / "index.md").read_text(encoding="utf-8")
     assert root.startswith('---\nokf_version: "0.2"\n---\n# vault-kb\n\n')
     assert "- [A](<.notes/20_projects/A/index.md>) — 4 件\n" in root
     assert "- [shared](<.notes/30_shared/index.md>) — 0 件\n" in root
@@ -284,8 +284,8 @@ def test_write_indexesは根にokf_version_案件と区分の一覧_区分はdat
         "（原本: [none.xlsx](<../../../../20_projects/A/01_x/none.xlsx>)、日付なし）"
         "（文字を取り出せていない）\n"
     )
-    assert not (vault.base / "20_projects" / "A" / "index.md").exists()
-    assert not (vault.base / "20_projects" / "A" / "01_x" / "index.md").exists()
+    assert not (vault.root / "20_projects" / "A" / "index.md").exists()
+    assert not (vault.root / "20_projects" / "A" / "01_x" / "index.md").exists()
 
 
 def test_write_indexesはサブフォルダのノートを区分からの相対パスで載せる(vault):
@@ -300,6 +300,42 @@ def test_write_indexesはサブフォルダのノートを区分からの相対�
         "- [深い](<sub/deep.pdf.md>) — 説明"
         "（原本: [deep.pdf](<../../../../20_projects/A/01_x/sub/deep.pdf>)、2026-10-15）"
     ) in category
+
+
+def test_write_indexesは案件と区分の大文字小文字が違うresourceのノートも数えて載せる(vault):
+    (vault.root / "20_projects" / "Acme" / "01_Quote").mkdir(parents=True)
+    make_note(vault, "acme", "01_quote", "f.txt", title="見積")  # Windows は同じフォルダ
+
+    write_indexes(vault)
+
+    root = (vault.root / "index.md").read_text(encoding="utf-8")
+    category = (vault.notes_dir / "20_projects" / "Acme" / "01_Quote" / "index.md").read_text(
+        encoding="utf-8"
+    )
+    assert "Acme" in root
+    assert "— 1 件" in root
+    assert "[見積]" in category
+
+
+def test_write_indexesは根のフォルダ名の大文字小文字が違うresourceのノートも数える(vault):
+    (vault.root / "20_projects" / "A" / "01_x").mkdir(parents=True)
+    make_note(vault, "A", "01_x", "f.txt", resource="20_Projects/A/01_x/f.txt")
+
+    write_indexes(vault)
+
+    assert "— 1 件" in (vault.root / "index.md").read_text(encoding="utf-8")
+
+
+def test_write_indexesは案件の直下にある原本のノートも案件の件数に数える(vault):
+    (vault.root / "20_projects" / "A" / "01_x").mkdir(parents=True)
+    make_note(vault, "A", "01_x", "in_category.txt")
+    put(vault, "20_projects/A/loose.txt")  # 区分に入らない原本
+    make_note(vault, "A", "01_x", "loose.txt", resource="20_projects/A/loose.txt")
+
+    write_indexes(vault)
+
+    root = (vault.root / "index.md").read_text(encoding="utf-8")
+    assert "— 2 件" in root
 
 
 def test_リンクは特殊文字と空白を含む名前でも壊れない(vault):
@@ -333,11 +369,11 @@ def test_linkは_大なりと改行をエンコードしラベルの円記号と
 
 def test_write_indexesは案件フォルダがなくても根の索引を書く(tmp_path):
     vault = Vault(tmp_path / "v")
-    (vault.base).mkdir(parents=True)
+    (vault.root).mkdir(parents=True)
 
     write_indexes(vault)
 
-    assert (vault.base / "index.md").read_text(encoding="utf-8") == (
+    assert (vault.root / "index.md").read_text(encoding="utf-8") == (
         '---\nokf_version: "0.2"\n---\n# vault-kb\n\n'
     )
 
@@ -345,19 +381,19 @@ def test_write_indexesは案件フォルダがなくても根の索引を書く(
 def test_write_indexesは消えた案件の索引を残さない(vault):
     make_note(vault, "A", "01_x", "f.xlsx")
     write_indexes(vault)
-    assert ".notes/20_projects/A/index.md" in (vault.base / "index.md").read_text(encoding="utf-8")
+    assert ".notes/20_projects/A/index.md" in (vault.root / "index.md").read_text(encoding="utf-8")
     assert (vault.notes_dir / "20_projects" / "A" / "01_x" / "index.md").exists()
 
-    shutil.rmtree(vault.base / "20_projects" / "A")
+    shutil.rmtree(vault.root / "20_projects" / "A")
     vault.note_path(
-        vault.base / "20_projects" / "A" / "01_x" / "f.xlsx"
+        vault.root / "20_projects" / "A" / "01_x" / "f.xlsx"
     ).unlink()  # 片づけが孤児を消した後
     write_indexes(vault)
 
-    assert ".notes/20_projects/A/index.md" not in (vault.base / "index.md").read_text(
+    assert ".notes/20_projects/A/index.md" not in (vault.root / "index.md").read_text(
         encoding="utf-8"
     )
-    assert not (vault.base / "20_projects" / "A").exists()
+    assert not (vault.root / "20_projects" / "A").exists()
     assert not (vault.notes_dir / "20_projects" / "A").exists()
 
 
@@ -366,7 +402,7 @@ def test_append_logは同じ日の見出しの直後に新しいものを挿入�
     append_log(vault, ["**Filed** 二.xlsx → A/01_x"], datetime(2026, 10, 31, 18, 0))
     append_log(vault, ["**Moved** 三.xlsx"], datetime(2026, 11, 1, 8, 0))
 
-    text = (vault.base / "log.md").read_text(encoding="utf-8")
+    text = (vault.root / "log.md").read_text(encoding="utf-8")
 
     assert text == (
         "## 2026-11-01\n\n- **Moved** 三.xlsx\n\n"
@@ -375,7 +411,7 @@ def test_append_logは同じ日の見出しの直後に新しいものを挿入�
 
 
 def _write_log(vault, text):
-    (vault.base / "log.md").write_text(text, encoding="utf-8")
+    (vault.root / "log.md").write_text(text, encoding="utf-8")
 
 
 def test_append_logは90日より古い日付の見出しを行ごと消し_境界の日は残す(vault):
@@ -386,7 +422,7 @@ def test_append_logは90日より古い日付の見出しを行ごと消し_境�
 
     append_log(vault, ["**Filed** 今日"], datetime(2026, 11, 2, 9, 0))
 
-    assert (vault.base / "log.md").read_text(encoding="utf-8") == (
+    assert (vault.root / "log.md").read_text(encoding="utf-8") == (
         "## 2026-11-02\n\n- **Filed** 今日\n\n## 2026-10-31\n\n- 新\n\n## 2026-08-04\n\n- 境界\n"
     )
 
@@ -396,7 +432,7 @@ def test_append_logは見出しより前の文章を残す(vault):
 
     append_log(vault, ["今日"], datetime(2026, 11, 2, 9, 0))
 
-    assert (vault.base / "log.md").read_text(encoding="utf-8") == (
+    assert (vault.root / "log.md").read_text(encoding="utf-8") == (
         "## 2026-11-02\n\n- 今日\n\nメモ\n"
     )
 
@@ -406,7 +442,7 @@ def test_append_logは古い日付の見出しの下にある日付でない見�
 
     append_log(vault, ["今日"], datetime(2026, 11, 2, 9, 0))
 
-    assert (vault.base / "log.md").read_text(encoding="utf-8") == (
+    assert (vault.root / "log.md").read_text(encoding="utf-8") == (
         "## 2026-11-02NN- 今日NN## 私のメモNN- 大事N".replace("N", "\n")
     )
 
@@ -416,7 +452,7 @@ def test_append_logはすべて古ければ今日の見出しだけになる(vau
 
     append_log(vault, ["今日"], datetime(2026, 11, 2, 9, 0))
 
-    assert (vault.base / "log.md").read_text(encoding="utf-8") == "## 2026-11-02\n\n- 今日\n"
+    assert (vault.root / "log.md").read_text(encoding="utf-8") == "## 2026-11-02\n\n- 今日\n"
 
 
 def test_dateが文字列でないノートがあっても索引を書け_日付なしとして最後に並ぶ(vault):
@@ -478,7 +514,7 @@ def test_projectsとcategoriesはドットで始まるフォルダを除く(vaul
 def test_append_logは一度に渡した複数の行を渡した順で並べる(vault):
     append_log(vault, ["一", "二", "三"], datetime(2026, 10, 31, 9, 0))
 
-    assert (vault.base / "log.md").read_text(encoding="utf-8") == (
+    assert (vault.root / "log.md").read_text(encoding="utf-8") == (
         "## 2026-10-31\n\n- 一\n- 二\n- 三\n"
     )
 
@@ -540,7 +576,7 @@ def test_notesは予約名を大文字小文字の違いでもノートとして
 def test_write_indexesは中身が同じ索引を書き直さない(vault):
     make_note(vault, "A", "01_x", "a.txt")
     write_indexes(vault)
-    indexes = [vault.base / "index.md", *vault.notes_dir.rglob("index.md")]
+    indexes = [vault.root / "index.md", *vault.notes_dir.rglob("index.md")]
     assert len(indexes) >= 3
     for path in indexes:
         os.utime(path, ns=(1_000_000_000, 1_000_000_000))
@@ -565,8 +601,8 @@ def test_write_indexesは中身が変われば索引を書き直す(vault):
 def test_write_indexesはUTF8で読めない索引も上書きして直す(vault):
     make_note(vault, "A", "01_x", "a.txt")
     write_indexes(vault)
-    (vault.base / "index.md").write_bytes("# 壊れた".encode("cp932"))
+    (vault.root / "index.md").write_bytes("# 壊れた".encode("cp932"))
 
     write_indexes(vault)
 
-    assert "vault-kb" in (vault.base / "index.md").read_text(encoding="utf-8")
+    assert "vault-kb" in (vault.root / "index.md").read_text(encoding="utf-8")

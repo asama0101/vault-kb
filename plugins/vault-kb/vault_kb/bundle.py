@@ -56,6 +56,7 @@ _SHA256 = re.compile(r"[0-9a-f]{64}")
 LOG_KEEP_DAYS = 90  # log.md に残す日数（これより古い日付の見出しは消す）
 _LOG_HEADING = re.compile(r"## (\d{4}-\d{2}-\d{2})")
 _NOTE_CACHE: dict[Path, tuple[tuple[int, int], bool]] = {}  # 見張りが毎回開かないための記憶
+_PROJECT_ROOTS_FOLDED = {fold_name(name) for name in PROJECT_ROOTS}
 
 
 @dataclass(frozen=True)
@@ -124,7 +125,7 @@ def write_note(path: Path, meta: dict[str, Any], body: str) -> None:
 def location(vault: Vault, path: Path) -> tuple[str, str] | None:
     """区分より下のファイルなら (案件, 区分)。案件フォルダ・30_shared・40_knowledge の下だけ。"""
     try:
-        parts = path.relative_to(vault.base).parts
+        parts = path.relative_to(vault.root).parts
     except ValueError:
         return None
     if parts[:1] and parts[0] in PROJECT_ROOTS and len(parts) >= 4:
@@ -203,7 +204,7 @@ def notes(vault: Vault) -> list[Note]:
             continue
         meta = read_frontmatter(path)
         if is_note(meta):
-            found.append(Note(path, meta, vault.base / meta["resource"]))
+            found.append(Note(path, meta, vault.root / meta["resource"]))
     return found
 
 
@@ -231,7 +232,7 @@ def candidates(vault: Vault) -> list[Path]:
         path
         for _, path in _project_files(vault)
         if location(vault, path)
-        and not any(part.startswith(".") for part in path.relative_to(vault.base).parts)
+        and not any(part.startswith(".") for part in path.relative_to(vault.root).parts)
         and is_original_file(path)
     ]
 
@@ -242,7 +243,7 @@ def originals(vault: Vault) -> list[Path]:
 
 def inbox_files(vault: Vault) -> list[Path]:
     """00_inbox 直下のファイル（拡張子は問わない。無視する名前を除く）。"""
-    inbox = vault.base / INBOX_NAME
+    inbox = vault.root / INBOX_NAME
     if not inbox.is_dir() or is_link(inbox):
         return []
     _, files = _shallow(inbox)
@@ -319,7 +320,7 @@ def _prune_indexes(vault: Vault) -> None:
     """対応するフォルダがなくなった notes_dir の index.md と、空になったフォルダを消す。"""
     for here, _, names in os.walk(vault.notes_dir, topdown=False):
         folder = Path(here)
-        if (vault.base / folder.relative_to(vault.notes_dir)).is_dir():
+        if (vault.root / folder.relative_to(vault.notes_dir)).is_dir():
             continue
         if "index.md" in names:
             (folder / "index.md").unlink()
@@ -337,24 +338,44 @@ def _write_index(path: Path, text: str) -> None:
     atomic_write(path, text)
 
 
+def _group_notes(
+    vault: Vault, all_notes: list[Note]
+) -> tuple[dict[Path, list[Note]], dict[Path, list[Note]]]:
+    """ノートを、原本のある案件フォルダと、区分のフォルダ（サブフォルダの中も含む）ごとに分ける。
+
+    案件ごとに全ノートを調べ直さないため（案件数 × ノート数の時間になる）、1 回の走査で分ける。
+    """
+    by_project: dict[Path, list[Note]] = {}
+    by_category: dict[Path, list[Note]] = {}
+    for note in all_notes:
+        parts = note.original.relative_to(vault.root).parts
+        # 20_projects/<案件>、30_shared など。根の名前は Windows と同じく大文字小文字を区別しない
+        depth = 2 if fold_name(parts[0]) in _PROJECT_ROOTS_FOLDED else 1
+        folder = vault.root.joinpath(*parts[:depth])
+        by_project.setdefault(folder, []).append(note)
+        if len(parts) > depth + 1:
+            by_category.setdefault(folder / parts[depth], []).append(note)
+    return by_project, by_category
+
+
 def write_indexes(vault: Vault) -> None:
     """根の index.md と、notes_dir の案件・区分の index.md を作り直す。"""
     vault.hide_notes_dir()
     _prune_indexes(vault)
-    all_notes = notes(vault)
+    by_project, by_category = _group_notes(vault, notes(vault))
     root_lines = []
     for project, folder in vault.project_folders():
-        relative = folder.relative_to(vault.base).as_posix()
+        relative = folder.relative_to(vault.root).as_posix()
         notes_folder = vault.notes_dir / relative
         label = project + ("（アーカイブ）" if relative.startswith(f"{ARCHIVE_NAME}/") else "")
-        in_project = [n for n in all_notes if n.original.is_relative_to(folder)]
+        in_project = by_project.get(folder, [])
         root_lines.append(
             f"- {link(f'{NOTES_NAME}/{relative}/index.md', label)} — {len(in_project)} 件\n"
         )
         project_lines = []
         for category in _categories_in(folder):
             cat_folder = notes_folder / category
-            in_category = [n for n in in_project if n.original.is_relative_to(folder / category)]
+            in_category = by_category.get(folder / category, [])
             project_lines.append(
                 f"- {link(f'{category}/index.md', category)} — {len(in_category)} 件\n"
             )
@@ -362,7 +383,7 @@ def write_indexes(vault: Vault) -> None:
             _write_index(cat_folder / "index.md", f"# {project} / {category}\n\n{lines}")
         _write_index(notes_folder / "index.md", f"# {project}\n\n{''.join(project_lines)}")
     head = f'---\nokf_version: "{OKF_VERSION}"\n---\n# vault-kb\n\n'
-    _write_index(vault.base / "index.md", head + "".join(root_lines))
+    _write_index(vault.root / "index.md", head + "".join(root_lines))
 
 
 def _prune_log(text: str, today: datetime) -> str:
@@ -385,7 +406,7 @@ def append_log(vault: Vault, entries: list[str], now: datetime) -> None:
 
     LOG_KEEP_DAYS 日より古い日付の見出しは、このとき消す。
     """
-    path = vault.base / "log.md"
+    path = vault.root / "log.md"
     existing = _prune_log(path.read_text(encoding="utf-8"), now) if path.exists() else ""
     heading = f"## {now.date().isoformat()}\n"
     lines = "".join(f"- {entry}\n" for entry in entries)

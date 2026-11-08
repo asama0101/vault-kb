@@ -30,6 +30,23 @@ def test_extractは各形式の本文を取り出す(tmp_path: Path, name, make,
     assert reason is None
 
 
+def test_extractはMarkItDownを資料ごとに作り直さない(tmp_path: Path, monkeypatch) -> None:
+    created = []
+    original_init = MarkItDown.__init__
+
+    def counting_init(self, *args, **kwargs) -> None:
+        created.append(self)
+        original_init(self, *args, **kwargs)
+
+    monkeypatch.setattr(MarkItDown, "__init__", counting_init)
+    for name in ("a.txt", "b.txt"):
+        make_txt(tmp_path / name, JP_TEXT)
+        assert extract(tmp_path / name)[1] is None
+
+    # 前のテストで作られていれば 0 回。毎回作り直す実装なら 2 回になる
+    assert len(created) <= 1
+
+
 def test_extractは文字のないPDFを理由つきで空にする(tmp_path: Path) -> None:
     path = tmp_path / "scan.pdf"
     make_pdf(path, "")

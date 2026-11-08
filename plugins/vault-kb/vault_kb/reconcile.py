@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
-import os
 import shutil
+import time
 from datetime import date, datetime
 from pathlib import Path, PurePosixPath
 from typing import Any
 
 from . import bundle, conflict, convert
+from .lock import acquire, release
 from .vault import (
     ARCHIVE_NAME,
     DEFAULT_CATEGORY,
@@ -33,10 +34,13 @@ from .vault import (
     split_category,
 )
 
-LOCK_STALE_SECONDS = 900
 MAX_PATH_LEN = 240
 EXCERPT_CHARS = 4000  # Claude が判断に使う本文の長さ（staging の Read には確認が出る）
 MAX_ITEMS = 20  # 1 回の prepare が返す項目の上限（抜粋が多すぎると Claude が受け取れない）
+# 変換にかける時間の目安（Bash ツールの既定 120 秒を超えにくくするため。保証ではない:
+# 前処理の sha256 は含まず、締め切り直前に始めた 1 件は途中で止めない）
+CONVERT_BUDGET_SECONDS = 60
+MAX_SAFE_REMOVALS = 5  # 原本のないノートをこの件数までは、半数を超えても確認なしで消す
 MAX_ABS_PATH = 259  # Windows の MAX_PATH（260）から終端を除いた長さ
 PLAN_NAME = ".vault-kb-plan.json"  # vault の直下。. 始まりなので走査が無視する
 _PREVIOUS_KEYS = ("title", "description", "tags", "client", "doc_type", "date")
@@ -44,53 +48,6 @@ _NOT_CONVERTED = "変換結果がありません（原本が変わった可能�
 
 Item = dict[str, Any]
 _RESERVED_PROJECTS = {SHARED_PROJECT: SHARED_NAME, KNOWLEDGE_PROJECT: KNOWLEDGE_NAME}
-
-
-class Busy(Exception):
-    """別の片づけが進行中（ロックが 15 分以内）。"""
-
-
-def _lock_path(data_dir: Path) -> Path:
-    return data_dir / "reconcile.lock"
-
-
-def _create_lock(path: Path, now: datetime) -> None:
-    """ロックを新しく作る（あれば FileExistsError）。"""
-    path.parent.mkdir(parents=True, exist_ok=True)
-    handle = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
-    with os.fdopen(handle, "w", encoding="utf-8") as file:
-        file.write(now.isoformat())
-
-
-def _is_fresh(path: Path, now: datetime) -> bool:
-    try:
-        written = datetime.fromisoformat(path.read_text(encoding="utf-8").strip())
-        # 未来の時刻（時計が戻った）を生きているとみなすと、いつまでも取れない
-        return 0 <= (now - written).total_seconds() < LOCK_STALE_SECONDS
-    except (OSError, ValueError, TypeError):
-        return False
-
-
-def acquire(data_dir: Path, now: datetime) -> None:
-    """ロックを取る。進行中（15 分未満）なら Busy。古い・読めないロックは消して取り直す。"""
-    path = _lock_path(data_dir)
-    # shortcut: 古いロックの引き継ぎは、2 本が同時に「古い」と見ると両方が取れる。
-    # 落ちたロックが残った直後に、ask と見張りが同時に動くときだけ。同名の保留があるので壊れはしない
-    busy = Busy("別の片づけが進行中です。15 分後にもう一度試してください。")
-    try:
-        _create_lock(path, now)
-    except FileExistsError:
-        if _is_fresh(path, now):
-            raise busy from None
-        path.unlink(missing_ok=True)
-        try:
-            _create_lock(path, now)
-        except FileExistsError:
-            raise busy from None
-
-
-def release(data_dir: Path) -> None:
-    _lock_path(data_dir).unlink(missing_ok=True)
 
 
 def staging_path(data_dir: Path, sha: str) -> Path:
@@ -173,7 +130,7 @@ def _follow(vault: Vault, note: bundle.Note, match: Path, target: Path, done: li
     old = vault.rel(note.path)
     size, mtime_ns = convert.stat_of(match)
     updates: dict[str, Any] = {
-        "resource": match.relative_to(vault.base).as_posix(),
+        "resource": match.relative_to(vault.root).as_posix(),
         "size": size,
         "mtime_ns": mtime_ns,
     }
@@ -197,9 +154,16 @@ def _follow_orphans(
     shas: _ShaCache,
     done: list[str],
     errors: list[dict[str, str]],
+    total: int,
 ) -> list[Path]:
-    """原本のないノートを、sha256 が同じ未登録の原本の隣へ移す。なければ消す。"""
+    """原本のないノートを、sha256 が同じ未登録の原本の隣へ移す。なければ消す。
+
+    消す件数が MAX_SAFE_REMOVALS を超え、かつ全ノート（total）の半数を超えるときは、
+    消さずに errors で知らせる（同期が途中で、原本がまだ届いていないだけかもしれない。
+    消すと全件を要約し直すことになる）。
+    """
     remaining = list(unregistered)
+    to_remove = []
     for note in orphans:
         match, uncertain = _find_match(vault, note, remaining, shas, errors)
         if match is None and uncertain:
@@ -211,8 +175,25 @@ def _follow_orphans(
                 remaining.remove(match)  # 失敗しても主張済み。次回の追従で再試行する
                 _follow(vault, note, match, target, done)
             else:
-                note.path.unlink()
-                done.append(f"**Removed** {old}（原本が見つからない）")
+                to_remove.append(note)
+        except OSError as error:
+            _report(errors, old, error)
+    if len(to_remove) > MAX_SAFE_REMOVALS and len(to_remove) * 2 > total:
+        errors.append(
+            {
+                "source": vault.rel(vault.notes_dir),
+                "message": f"原本のないノートが {len(to_remove)} 件あり、全体の半数を超えるため、"
+                "消していません（同期の途中で、原本がまだ届いていない可能性）。"
+                "原本が揃ってから、もう一度実行してください"
+                "（本当に不要なら、.notes の該当ノートを手で削除してください）",
+            }
+        )
+        return remaining
+    for note in to_remove:
+        old = vault.rel(note.path)
+        try:
+            note.path.unlink()
+            done.append(f"**Removed** {old}（原本が見つからない）")
         except OSError as error:
             _report(errors, old, error)
     return remaining
@@ -252,7 +233,7 @@ def _item(vault: Vault, path: Path, kind: str, previous: dict[str, Any] | None =
     if kind == "inbox":
         parent = path.parent
         names = {folder: name for name, folder in vault.project_folders()}
-        project = None if parent == vault.base / INBOX_NAME else names.get(parent, parent.name)
+        project = None if parent == vault.root / INBOX_NAME else names.get(parent, parent.name)
         category = None
     else:
         project, category = place if place else (None, None)
@@ -289,11 +270,11 @@ def _convert_item(vault: Vault, data_dir: Path, item: Item, shas: _ShaCache) -> 
 
 def _context(vault: Vault) -> dict[str, Any]:
     all_notes = bundle.notes(vault)
-    # 完了した案件（80_archive）は、新しい資料の行き先にしない
+    # 完了した案件（80_archive）は、新しい資料の行き先の候補に出さない（名前を指定されれば入る）
     counts: dict[str, dict[str, int]] = {
         project: dict.fromkeys(bundle.categories(vault, project), 0)
         for project, folder in vault.project_folders()
-        if not folder.is_relative_to(vault.base / ARCHIVE_NAME)
+        if not folder.is_relative_to(vault.root / ARCHIVE_NAME)
     }
     names: dict[str, int] = {}
     for note in all_notes:
@@ -315,7 +296,8 @@ def _collect(
 ) -> tuple[list[Item], int]:
     """直せるものを直し（done に記録）、判断が要る項目を変換して返す。
 
-    変換するのは MAX_ITEMS 件まで（開けなかった項目は数えない）。残りの件数も返す。
+    変換するのは MAX_ITEMS 件まで（開けなかった項目は数えない）か、CONVERT_BUDGET_SECONDS を
+    超えるまで（最低 1 件は返す）。残りの件数も返す。
     shortcut: apply で毎回 error になる項目が MAX_ITEMS 件以上あると、後ろの資料は返らない。
     """
     shas: _ShaCache = {}
@@ -325,7 +307,7 @@ def _collect(
     registered = {n.original for n in live}
     # 照合先は拡張子を問わない（読めない資料のノートも追従させる）。未登録の項目は対応する拡張子だけ
     others = [p for p in bundle.candidates(vault) if p not in registered]
-    others = _follow_orphans(vault, orphans, others, shas, done, errors)
+    others = _follow_orphans(vault, orphans, others, shas, done, errors, len(all_notes))
     unregistered = [p for p in others if is_supported(p.name)]
     items = _detect_changes(vault, live, shas, errors)
     items += [_item(vault, p, "inbox") for p in bundle.inbox_files(vault)]
@@ -333,8 +315,10 @@ def _collect(
     items += [_item(vault, p, "unregistered") for p in unregistered]
 
     converted: list[Item] = []
+    deadline = time.monotonic() + CONVERT_BUDGET_SECONDS
     for number, item in enumerate(items):
-        if len(converted) == MAX_ITEMS:
+        # 最低 1 件は返す（返さないと、重い資料の前で永久に進まない）
+        if len(converted) == MAX_ITEMS or (converted and time.monotonic() >= deadline):
             return converted, len(items) - number
         try:
             _convert_item(vault, data_dir, item, shas)
@@ -349,7 +333,7 @@ def _warnings(vault: Vault) -> list[str]:
     """案件フォルダが予約名（shared・knowledge）と衝突しているときの警告。"""
     found = []
     for root in PROJECT_ROOTS:
-        folder = vault.base / root
+        folder = vault.root / root
         if not folder.is_dir():
             continue
         for child in sorted(folder.iterdir()):
@@ -377,14 +361,14 @@ def _prepare(vault: Vault, data_dir: Path, now: datetime) -> dict[str, Any]:
         bundle.write_indexes(vault)
         release(data_dir)
     return {
-        "vault": str(vault.base),
+        "vault": str(vault.root),
         "items": items,
         "more": more,
         "context": _context(vault),
         "done": done,
         "errors": errors,
         "warnings": _warnings(vault),
-        "plan_path": (vault.base / PLAN_NAME).as_posix(),  # 手順書は / 区切りのまま使わせる
+        "plan_path": (vault.root / PLAN_NAME).as_posix(),  # 手順書は / 区切りのまま使わせる
     }
 
 
@@ -448,9 +432,10 @@ def _destination(vault: Vault, item: Item) -> Path:
     project = next(
         (p for p in bundle.projects(vault) if fold_name(p) == fold_name(project)), project
     )
-    # 新しい案件には 99_その他 も作る（apply）ので、最初からあるものとして寄せる
+    # 新しい案件には 99_その他 も作る（apply）ので、最初からあるものとして寄せる。
+    # 80_archive の案件も、名前を指定されれば行き先になる（_context が候補に出さないだけ）
     project_dir = vault.project_dir(project) or (
-        vault.base / _RESERVED_PROJECTS.get(project, f"{PROJECTS_NAME}/{project}")
+        vault.root / _RESERVED_PROJECTS.get(project, f"{PROJECTS_NAME}/{project}")
     )
     is_new = not project_dir.is_dir()
     existing = [DEFAULT_CATEGORY] if is_new else bundle.categories(vault, project)
@@ -467,7 +452,7 @@ def _destination(vault: Vault, item: Item) -> Path:
     for path in (folder.parent, folder):
         if is_link(path):
             raise ValueError(f"移動先がリンクです: {vault.rel(path)}")
-    if not folder.resolve().is_relative_to(vault.base.resolve()):
+    if not folder.resolve().is_relative_to(vault.root.resolve()):
         raise ValueError(f"移動先が vault の外です: {vault.rel(folder)}")
     return folder
 
@@ -503,7 +488,7 @@ def _write_item_note(
         "type": "document",
         "title": item["title"],
         "description": item["description"] or reason or "",
-        "resource": original.relative_to(vault.base).as_posix(),
+        "resource": original.relative_to(vault.root).as_posix(),
         "tags": item["tags"],
         "timestamp": now.isoformat(),
         "project": place[0],
@@ -528,7 +513,7 @@ def _source_path(vault: Vault, item: Item) -> Path:
     if "\\" in rel:
         raise ValueError(f"source に \\ は使えません: {rel!r}")
     source = vault.path(rel)
-    if not source.resolve().is_relative_to(vault.base.resolve()):
+    if not source.resolve().is_relative_to(vault.root.resolve()):
         raise ValueError(f"vault の外です: {rel!r}")
     hidden = any(part.startswith(".") for part in PurePosixPath(rel).parts)  # .obsidian/ など
     if source.is_symlink() or is_ignored(source.name) or hidden:
@@ -539,7 +524,7 @@ def _source_path(vault: Vault, item: Item) -> Path:
         raise ValueError(f"資料として扱えないファイルです: {rel}")
     note = vault.note_path(source)
     if item["kind"] == "inbox":
-        roots = [vault.base / INBOX_NAME, *(folder for _, folder in vault.project_folders())]
+        roots = [vault.root / INBOX_NAME, *(folder for _, folder in vault.project_folders())]
         if source.parent not in roots:
             raise ValueError(
                 f"inbox は {INBOX_NAME}/ か案件フォルダの直下のファイルだけです: {rel}"
@@ -672,7 +657,7 @@ def _finish(vault: Vault, data_dir: Path, done: list[str], now: datetime) -> OSE
         lambda: bundle.write_indexes(vault),
         lambda: release(data_dir),
         lambda: shutil.rmtree(data_dir / "staging", ignore_errors=True),
-        lambda: (vault.base / PLAN_NAME).unlink(missing_ok=True),
+        lambda: (vault.root / PLAN_NAME).unlink(missing_ok=True),
     ]
     failure = None
     for step in steps:

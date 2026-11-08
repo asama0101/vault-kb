@@ -157,18 +157,25 @@ def _disk_problem(path: Path) -> str | None:
     return None
 
 
-def _vault_problem(data: Path) -> tuple[str | None, str]:
-    """(問題, 設定されている vault のパス)。"""
+def _configured_vault(data: Path) -> tuple[Path | None, str | None]:
+    """(設定されている vault のパス, 問題)。未設定・壊れていれば、パスは None。"""
     path = data / "config.json"
     if not path.exists():
-        return "vault が未設定です", ""
+        return None, "vault が未設定です"
     try:
         configured = json.loads(path.read_text(encoding="utf-8"))["vault"]
         if not configured:  # Path("") は「現在のフォルダ」になってしまう
             raise ValueError(configured)
-        root = Path(configured)
+        return Path(configured), None
     except (OSError, ValueError, KeyError, TypeError):
-        return f"{path} が壊れています", ""
+        return None, f"{path} が壊れています"
+
+
+def _vault_problem(data: Path) -> tuple[str | None, str]:
+    """(問題, 設定されている vault のパス)。"""
+    root, problem = _configured_vault(data)
+    if root is None:
+        return problem, ""
     if not root.is_dir():
         return (
             f"vault のフォルダが見つかりません（別の PC・外付けドライブ・同期の切断など）: {root}",
@@ -283,15 +290,16 @@ def _doctor(data: Path) -> int:
     return 4 if vault_ng else 0
 
 
+def _requirement_count() -> int:
+    return sum(1 for line in REQUIREMENTS.read_text(encoding="utf-8").splitlines() if line.strip())
+
+
 def _setup(data: Path, approved: bool) -> int:
-    requirements = [
-        line for line in REQUIREMENTS.read_text(encoding="utf-8").splitlines() if line.strip()
-    ]
     if not approved:
         print(
             "専用環境を作成します（利用者の承認が必要です）。\n"
             f"- 作成先: {data / 'venv'}\n"
-            f"- 内容: markitdown と依存ライブラリ（{len(requirements)} 件。PyPI から取得）\n"
+            f"- 内容: markitdown と依存ライブラリ（{_requirement_count()} 件。PyPI から取得）\n"
             f"- 容量: {APPROX_SIZE}\n"
             f"- 使う Python: {sys.executable}\n"
             "承認する場合は、`setup --yes` を付けて再実行してください。"
@@ -338,13 +346,10 @@ def _setup_system(data: Path, approved: bool) -> int:
         return 3
     command = [sys.executable, "-m", "pip", "install", "--user", "--disable-pip-version-check"]
     if not approved:
-        count = len(
-            [line for line in REQUIREMENTS.read_text(encoding="utf-8").splitlines() if line.strip()]
-        )
         print(
             "システムの Python にパッケージを入れます（利用者の承認が必要です）。\n"
             f"- 実行: {' '.join(command)} -r requirements.txt\n"
-            f"- 内容: markitdown と依存ライブラリ（{count} 件。PyPI から取得）\n"
+            f"- 内容: markitdown と依存ライブラリ（{_requirement_count()} 件。PyPI から取得）\n"
             f"- 容量: {APPROX_SIZE}\n"
             "- 注意: 他のツールが使う同名のパッケージの版が、固定の版に変わることがあります。\n"
             "  避けたいときは、venv に入れてください（`setup --mode venv`）。\n"
@@ -392,11 +397,8 @@ def _setup_system(data: Path, approved: bool) -> int:
 
 def _plan_path(data: Path) -> Path | None:
     """設定済みの vault の計画ファイル。未設定・壊れていれば None。"""
-    try:
-        root = json.loads((data / "config.json").read_text(encoding="utf-8"))["vault"]
-        return Path(root) / PLAN_NAME
-    except (OSError, ValueError, KeyError, TypeError):
-        return None
+    root, _ = _configured_vault(data)
+    return root / PLAN_NAME if root is not None else None
 
 
 def _same(path: str | Path, expected: Path) -> bool:

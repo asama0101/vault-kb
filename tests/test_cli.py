@@ -489,7 +489,7 @@ def test_resolveは保留でない資料なら終了コード2(configured):
 def test_resolveは片づけが進行中ならbusyを返して何も動かさない(configured):
     from datetime import datetime
 
-    from vault_kb.reconcile import acquire
+    from vault_kb.lock import acquire
 
     root, data = configured
     incoming, existing = _hold(root)
