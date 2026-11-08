@@ -186,13 +186,10 @@ def test_watchはMonitorの張り方を持つ():
     assert 'run.py" --data "${CLAUDE_PLUGIN_DATA}" watch' in text
 
 
-def test_フックはSessionStartでnotifyを15秒の上限つきで呼ぶ():
+def test_フックはPreToolUseだけを持つ():
     hooks = json.loads((PLUGIN / "hooks" / "hooks.json").read_text(encoding="utf-8"))
 
-    [entry] = hooks["hooks"]["SessionStart"]
-    [hook] = entry["hooks"]
-    assert hook["command"].endswith(' --data "${CLAUDE_PLUGIN_DATA}" notify')
-    assert hook["timeout"] == 15
+    assert list(hooks["hooks"]) == ["PreToolUse"]
 
 
 def test_フックはPreToolUseで片づけに使うツールだけにapproveを5秒の上限つきで呼ぶ():

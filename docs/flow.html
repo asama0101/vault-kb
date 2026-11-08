@@ -365,7 +365,7 @@
 <table>
   <tr><th>場面</th><th>Claude の手順の出典</th><th>裏方の処理の出典</th></tr>
   <tr><td>1. 初回導入</td><td><code>skills/init/SKILL.md</code></td><td><code>run.py</code>（doctor・setup）、<code>vault_kb/cli.py</code>（configure）、<code>vault_kb/vault.py</code>（init_vault・install_obsidian_assets）</td></tr>
-  <tr><td>2. 開いたとき</td><td>—</td><td><code>hooks/hooks.json</code>（SessionStart）、<code>vault_kb/cli.py</code>（notify）、<code>vault_kb/watch.py</code>（status・notify_lines）</td></tr>
+  <tr><td>2. 開いたとき</td><td>—</td><td>なし（起動時の通知は廃止）</td></tr>
   <tr><td>3. 質問</td><td><code>skills/ask/SKILL.md</code></td><td><code>vault_kb/watch.py</code>（status）</td></tr>
   <tr><td>4. 片づけ</td><td><code>references/reconcile.md</code></td><td><code>vault_kb/reconcile.py</code>（prepare・apply）、<code>vault_kb/convert.py</code>、<code>vault_kb/bundle.py</code>（ノート・索引・履歴）</td></tr>
   <tr><td>5. 見張り</td><td><code>skills/watch/SKILL.md</code></td><td><code>vault_kb/watch.py</code>（watch_events・snapshot）</td></tr>

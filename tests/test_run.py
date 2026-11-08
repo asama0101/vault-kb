@@ -93,14 +93,6 @@ def test_専用環境がないとき委譲するコマンドは終了コード3�
     assert BASE_PYTHON in result.stderr
 
 
-def test_notifyは専用環境がないとき_initを案内して成功する(tmp_path):
-    result = run("--data", str(tmp_path / "data"), "notify")
-
-    assert result.returncode == 0
-    assert "/vault-kb:init" in result.stdout
-    assert result.stderr == ""
-
-
 def test_doctorは専用環境がないとき終了コード3で診断を出す(tmp_path):
     result = run("--data", str(tmp_path / "data"), "doctor")
 
@@ -174,7 +166,7 @@ def test_委譲したコマンドの結果と終了コードがそのまま返�
     vault_dir.mkdir()
 
     configured = run("configure", "--vault", str(vault_dir), "--data", str(data))
-    notified = run("notify", "--data", str(data))
+    notified = run("status", "--data", str(data))
     failed = run("nosuch", "--data", str(data))
 
     assert configured.returncode == 0, configured.stderr

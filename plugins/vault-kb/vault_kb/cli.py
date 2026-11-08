@@ -17,7 +17,6 @@ from . import bundle, lock, reconcile, watch
 from .vault import (
     ConfigError,
     Vault,
-    VaultNotFound,
     atomic_write,
     init_vault,
     install_obsidian_assets,
@@ -38,7 +37,6 @@ def _parser() -> argparse.ArgumentParser:
     configure = sub.add_parser("configure", help="vault を設定して標準のフォルダを作る")
     configure.add_argument("--vault", required=True)
     sub.add_parser("status", help="片づけ待ちの件数と、片づけの状態")
-    sub.add_parser("notify", help="未設定・片づけ待ちを案内する（フック用）")
     sub.add_parser("prepare", help="追従・削除を反映し、判断が要る資料を変換して返す")
     apply = sub.add_parser("apply", help="計画（JSON）どおりに資料を置いてノートを書く")
     apply.add_argument("plan")
@@ -55,29 +53,6 @@ def _data_dir() -> Path:
     if not home:
         raise ConfigError("環境変数 VAULT_KB_HOME が未設定です（run.py の --data で渡します）")
     return Path(home)
-
-
-def _notify() -> None:
-    """フック用。どんな失敗でも、セッションの開始を妨げない（呼び出し側は必ず 0 を返す）。"""
-    try:
-        _notify_lines()
-    except Exception as error:  # noqa: BLE001  フックは何があっても止めない
-        print(f"[vault-kb] 通知を省略しました: {type(error).__name__}: {error}", file=sys.stderr)
-
-
-def _notify_lines() -> None:
-    try:
-        data_dir = _data_dir()
-        vault = load_vault(data_dir)
-        lines = watch.notify_lines(watch.status(vault, data_dir))
-    except VaultNotFound as error:  # 設定はあるが、vault が見えない（外付け・同期の切断など）
-        lines = [str(error)]
-    except ConfigError:
-        lines = ["vault が未設定です。/vault-kb:init で設定してください。"]
-    except OSError:
-        return
-    for line in lines:
-        print(f"[vault-kb] {line}")
 
 
 def _configure(data_dir: Path, vault_arg: str) -> dict[str, Any]:
@@ -148,9 +123,6 @@ def _run(args: argparse.Namespace, data_dir: Path) -> dict[str, Any] | list[Any]
 
 def main(argv: list[str] | None = None) -> int:
     args = _parser().parse_args(argv)
-    if args.command == "notify":
-        _notify()
-        return 0
     try:
         result = _run(args, _data_dir())
     except KeyboardInterrupt:

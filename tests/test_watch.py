@@ -66,18 +66,6 @@ def test_statusはmtime_nsが整数でないノートで原本を登録済みに
     assert (result["unregistered"], result["changed"]) == (1, 0)  # a.txt だけ
 
 
-def test_notify_linesは待ちがあれば件数と片づけ方を1行で出す():
-    lines = watch.notify_lines({"pending": 3})
-
-    assert lines == [
-        "片づけ待ちが 3 件あります（/vault-kb:sweep・/vault-kb:watch・/vault-kb:ask で片づきます）"
-    ]
-
-
-def test_notify_linesは待ちがなければ空():
-    assert watch.notify_lines({"pending": 0}) == []
-
-
 def test_snapshotは原本だけを相対パスで返し_ノートと予約名は含めない(vault):
     put(vault, "00_inbox/受信.txt", b"abc")
     put(vault, "20_projects/案件A/共通/a.PDF", b"12345")

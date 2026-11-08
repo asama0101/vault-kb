@@ -70,17 +70,6 @@ def _stop_requested_after(data_dir: Path, started: datetime) -> bool:
         return False
 
 
-def notify_lines(status: dict[str, Any]) -> list[str]:
-    """セッション開始時に利用者へ伝える文。伝えることがなければ空。"""
-    lines = []
-    if status["pending"] > 0:
-        lines.append(
-            f"片づけ待ちが {status['pending']} 件あります"
-            "（/vault-kb:sweep・/vault-kb:watch・/vault-kb:ask で片づきます）"
-        )
-    return lines
-
-
 def snapshot(vault: Vault) -> dict[str, tuple[int, int]]:
     """00_inbox と案件フォルダの下の資料（予約名を除く）の {相対パス: (サイズ, 更新時刻 ns)}。"""
     roots = [vault.root / INBOX_NAME, *(folder for _, folder in vault.project_folders())]

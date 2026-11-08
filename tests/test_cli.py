@@ -235,47 +235,11 @@ def test_applyは計画の形が不正なら終了コード2(configured, tmp_pat
     assert "items" in result.stderr
 
 
-def test_notifyは未設定ならinitを案内し終了コード0(tmp_path):
-    result = kb(tmp_path / "data", "notify")
+def test_notifyはサブコマンドにない():
+    from vault_kb import cli
 
-    assert result.returncode == 0
-    assert result.stdout == "[vault-kb] vault が未設定です。/vault-kb:init で設定してください。\n"
-
-
-def test_notifyはvaultが見えないとき案内して終了コード0(configured):
-    root, data = configured
-    root.rename(root.parent / "移動した")
-
-    result = kb(data, "notify")
-
-    assert result.returncode == 0
-    assert result.stdout.startswith("[vault-kb] vault のフォルダが見つかりません")
-
-
-def test_notifyは片づけ待ちを1行で案内し片づけはしない(configured):
-    root, data = configured
-    memo = root / "00_inbox" / "memo.txt"
-    make_txt(memo, TEXT)
-
-    result = kb(data, "notify")
-
-    assert result.returncode == 0
-    assert result.stdout == (
-        "[vault-kb] 片づけ待ちが 1 件あります"
-        "（/vault-kb:sweep・/vault-kb:watch・/vault-kb:ask で片づきます）\n"
-    )
-    assert memo.read_text(encoding="utf-8") == TEXT
-    assert not (data / "reconcile.lock").exists()
-
-
-def test_notifyは待ちがなければ何も出さない(configured):
-    _, data = configured
-
-    result = kb(data, "notify")
-
-    assert result.returncode == 0
-    assert result.stdout == ""
-    assert sorted(p.name for p in data.iterdir()) == ["config.json"]
+    with pytest.raises(SystemExit):
+        cli._parser().parse_args(["notify"])
 
 
 def test_watchは新着を1行のchangedで出す(configured):
@@ -306,26 +270,6 @@ def test_watchは新着を1行のchangedで出す(configured):
         proc.wait()
 
     assert line == "changed\n"
-
-
-def test_notifyはVAULT_KB_HOMEが未設定でも終了コード0(monkeypatch):
-    monkeypatch.delenv("VAULT_KB_HOME", raising=False)
-
-    assert main(["notify"]) == 0
-
-
-def test_notifyは想定外の失敗でも終了コード0でstderrに1行出す(configured):
-    _, data = configured
-    (data / "config.json").write_bytes(b"\xff")  # UTF-8 として読めない設定
-
-    result = kb(data, "notify")
-
-    assert result.returncode == 0
-    assert result.stdout == ""
-    assert result.stderr == (
-        "[vault-kb] 通知を省略しました: UnicodeDecodeError: 'utf-8' codec can't decode "
-        "byte 0xff in position 0: invalid start byte\n"
-    )
 
 
 def test_applyの後処理のOSErrorは終了コード1でlog_mdを案内する(configured, tmp_path):

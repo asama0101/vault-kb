@@ -8,7 +8,7 @@
   Python に入れる。既定は venv。--yes なしは、作成内容を表示して止まる。
 - approve: PreToolUse フック。stdin のツール呼び出しが vault-kb 自身の片づけの操作なら
   allow を出す。それ以外は何も出さない（通常の確認に任せる）。常に終了コード 0。
-- それ以外（configure / status / notify / prepare / apply / release / reindex / watch / unwatch /
+- それ以外（configure / status / prepare / apply / release / reindex / watch / unwatch /
   record-stop）:
   専用環境の Python で vault_kb を実行する。
 
@@ -455,9 +455,6 @@ def _approve(data: Path) -> int:
 def _delegate(data: Path, args: list[str]) -> int:
     _, python, problem = _runtime(data)
     if problem:
-        if args[0] == "notify":  # セッション開始のフックは、未導入でも成功させて、init を案内する
-            print(f"[vault-kb] {problem}。/vault-kb:init で設定してください。")
-            return 0
         print(_guide(data, problem), file=sys.stderr)
         return 3
     env = {**os.environ, "VAULT_KB_HOME": str(data), "PYTHONUTF8": "1"}
