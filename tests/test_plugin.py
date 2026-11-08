@@ -13,7 +13,8 @@ REPO = Path(__file__).resolve().parent.parent
 PLUGIN = REPO / "plugins" / "vault-kb"
 SKILLS = sorted((PLUGIN / "skills").glob("*/SKILL.md"))
 REFERENCES = PLUGIN / "references" / "reconcile.md"
-TEXT_FILES = [*SKILLS, REFERENCES, PLUGIN / "hooks" / "hooks.json"]
+WIKI_GUIDE = PLUGIN / "references" / "wiki.md"
+TEXT_FILES = [*SKILLS, REFERENCES, WIKI_GUIDE, PLUGIN / "hooks" / "hooks.json"]
 
 
 def frontmatter(path: Path) -> dict[str, str]:
@@ -21,10 +22,11 @@ def frontmatter(path: Path) -> dict[str, str]:
     return dict(line.split(": ", 1) for line in head.splitlines() if ": " in line)
 
 
-def test_スキルは5つあり_nameがディレクトリ名と一致する():
+def test_スキルは6つあり_nameがディレクトリ名と一致する():
     assert [p.parent.name for p in SKILLS] == [
         "ask",
         "init",
+        "lint",
         "sweep",
         "unwatch",
         "watch",
@@ -46,8 +48,8 @@ def test_手順書は同名のconflictだけの結果で繰り返さない():
     assert "`discarded`・`conflict`）" not in text
 
 
-def test_init_sweep_unwatch_watchだけが自動起動を禁止している():
-    for name in ("init", "sweep", "unwatch", "watch"):
+def test_init_lint_sweep_unwatch_watchだけが自動起動を禁止している():
+    for name in ("init", "lint", "sweep", "unwatch", "watch"):
         assert frontmatter(PLUGIN / f"skills/{name}/SKILL.md")["disable-model-invocation"] == "true"
     assert "disable-model-invocation" not in frontmatter(PLUGIN / "skills/ask/SKILL.md")
 
@@ -59,7 +61,52 @@ def allowed_commands(skill: str) -> list[str]:
 
 
 def test_askは状態確認と片づけのコマンドだけを承認なしで許可する():
-    assert allowed_commands("ask") == ["status", "prepare", "apply *"]
+    # wiki のコマンドは test_askとlintはwikiのコマンドだけを足す で見る
+    cleanup = [c for c in allowed_commands("ask") if not c.startswith("wiki-")]
+
+    assert cleanup == ["status", "prepare", "apply *"]
+
+
+@pytest.mark.parametrize("name", ["ask", "lint"])
+def test_askとlintはwikiのコマンドだけを足す(name):
+    wiki = [c for c in allowed_commands(name) if c.startswith("wiki-")]
+
+    assert wiki == ["wiki-check *", "wiki-apply *"]
+
+
+LINT_TOOLS = [
+    "Read(//**/vault-kb/**)",
+    "Grep(//**/vault-kb/**)",
+    "Glob(//**/vault-kb/**)",
+    *(
+        f'Bash(python "${{CLAUDE_PLUGIN_ROOT}}/run.py" --data "${{CLAUDE_PLUGIN_DATA}}" {sub})'
+        for sub in ("status", "prepare", "apply *", "wiki-check *", "wiki-apply *")
+    ),
+    "Read(//**/references/reconcile.md)",
+    "Read(//**/references/wiki.md)",
+    "Edit(//**/vault-kb/.vault-kb-plan.json)",
+    "Edit(//**/vault-kb/.vault-kb-wiki-plan.json)",
+]
+
+
+def test_lintの許可は決まった範囲だけ():
+    tools = frontmatter(PLUGIN / "skills/lint/SKILL.md")["allowed-tools"]
+
+    # 空白を含む Bash(...) を 1 つの許可として切り出す
+    assert re.findall(r"\w+\([^)]*\)", tools) == LINT_TOOLS
+    assert re.sub(r"\w+\([^)]*\)", "", tools).strip() == ""
+
+
+def test_askの許可はlintと同じ():
+    tools = frontmatter(PLUGIN / "skills/ask/SKILL.md")["allowed-tools"]
+
+    assert re.findall(r"\w+\([^)]*\)", tools) == LINT_TOOLS
+
+
+def test_lintは自動起動しない():
+    meta = frontmatter(PLUGIN / "skills/lint/SKILL.md")
+
+    assert meta["disable-model-invocation"] == "true"
 
 
 def test_watchは片づけのコマンドとMonitorだけを許可する():
@@ -97,7 +144,19 @@ def test_askの読み取りはvault_kb配下に限定する():
     [
         (
             "ask",
-            ["Read(//**/vault-kb/**)", "Read(//**/references/reconcile.md)"],
+            [
+                "Read(//**/vault-kb/**)",
+                "Read(//**/references/reconcile.md)",
+                "Read(//**/references/wiki.md)",
+            ],
+        ),
+        (
+            "lint",
+            [
+                "Read(//**/vault-kb/**)",
+                "Read(//**/references/reconcile.md)",
+                "Read(//**/references/wiki.md)",
+            ],
         ),
         (
             "watch",
@@ -129,21 +188,87 @@ def test_initは診断と状態だけを承認なしで許可しSendMessageとLi
     assert "ListAgents" not in tools
 
 
-@pytest.mark.parametrize("name", ["ask", "sweep", "unwatch", "watch"])
-def test_計画の書き込みはvault_kbの隠しファイルの計画だけを許可する(name):
+PLAN_EDIT = "Edit(//**/vault-kb/.vault-kb-plan.json)"
+WIKI_PLAN_EDIT = "Edit(//**/vault-kb/.vault-kb-wiki-plan.json)"
+
+
+@pytest.mark.parametrize(
+    ("name", "expected"),
+    [
+        ("ask", [PLAN_EDIT, WIKI_PLAN_EDIT]),
+        ("lint", [PLAN_EDIT, WIKI_PLAN_EDIT]),
+        ("sweep", [PLAN_EDIT]),
+        ("unwatch", [PLAN_EDIT]),
+        ("watch", [PLAN_EDIT]),
+    ],
+)
+def test_計画の書き込みはvault_kbの隠しファイルの計画だけを許可する(name, expected):
     tools = frontmatter(PLUGIN / f"skills/{name}/SKILL.md")["allowed-tools"]
 
     # ~/.claude の下（${CLAUDE_PLUGIN_DATA}）は allowed-tools があっても確認が出るので、vault に置く
-    assert re.findall(r"(?:Write|Edit)\([^)]*\)", tools) == [
-        "Edit(//**/vault-kb/.vault-kb-plan.json)"
-    ]
+    assert re.findall(r"(?:Write|Edit)\([^)]*\)", tools) == expected
 
 
-@pytest.mark.parametrize("name", ["ask", "sweep", "unwatch", "watch"])
-def test_watchとaskとunwatchとsweepはreferencesのreconcileを読む(name):
+@pytest.mark.parametrize("name", ["ask", "lint", "sweep", "unwatch", "watch"])
+def test_watchとaskとunwatchとsweepとlintはreferencesのreconcileを読む(name):
     text = (PLUGIN / f"skills/{name}/SKILL.md").read_text(encoding="utf-8")
 
     assert "${CLAUDE_PLUGIN_ROOT}/references/reconcile.md" in text
+
+
+@pytest.mark.parametrize("name", ["ask", "lint"])
+def test_askとlintはreferencesのwikiを読む(name):
+    text = (PLUGIN / f"skills/{name}/SKILL.md").read_text(encoding="utf-8")
+
+    assert "${CLAUDE_PLUGIN_ROOT}/references/wiki.md" in text
+
+
+def test_wiki_mdは参照先が実在しTEXT_FILESの規則に通る():
+    # 参照先の実在・パスの規則は TEXT_FILES の parametrize のテストが見る
+    assert WIKI_GUIDE.is_file()
+    assert WIKI_GUIDE in TEXT_FILES
+    # 禁じる語の検査が wiki.py にも及ぶ
+    assert PLUGIN / "vault_kb" / "wiki.py" in SHIPPED_AND_DOCS
+
+
+def test_wiki_mdはwikiのコマンドを計画の固定パスで1行そのままで実行させる():
+    text = WIKI_GUIDE.read_text(encoding="utf-8")
+
+    for sub in ("wiki-check", "wiki-apply"):
+        assert (
+            f'python "${{CLAUDE_PLUGIN_ROOT}}/run.py" --data "${{CLAUDE_PLUGIN_DATA}}" {sub} '
+            '"<vault>/.vault-kb-wiki-plan.json"'
+        ) in text
+    assert "1 行で" in text
+    assert "足さない" in text
+    assert "別の実行に使われた" in text
+    assert '{"busy": true}' in text
+    assert "終了コード 2" in text
+
+
+def test_wiki_mdはwikiのコードの項目名で書く():
+    text = WIKI_GUIDE.read_text(encoding="utf-8")
+
+    # vault_kb/wiki.py の check・apply の入出力の名前（変えたら手順書も直す）
+    for field in (
+        "read_list",
+        "deferred",
+        "unread",
+        "digest",
+        "expected_digest",
+        "broken",
+        "reusable",
+        "deselected",
+        "unknown",
+        "selected",
+        "evidence",
+        "scope",
+        "overwrite",
+        "slug",
+    ):
+        assert f"`{field}`" in text, field
+    assert '"full": true' in text
+    assert "~~旧~~（取り消し 日付: 理由）" in text
 
 
 def test_initは普段のセッションで打つ見張りの始め方を案内する():
@@ -233,7 +358,7 @@ def test_reconcileの手順はconflictだけが残るときmoreでも繰り返�
     assert "同名のファイルが `00_inbox` に N 件残り" in text
 
 
-@pytest.mark.parametrize("skill", ["watch", "sweep", "ask", "unwatch", "init"])
+@pytest.mark.parametrize("skill", ["watch", "sweep", "ask", "unwatch", "init", "lint"])
 def test_スキルのallowed_toolsにreleaseがない(skill):
     tools = frontmatter(PLUGIN / f"skills/{skill}/SKILL.md")["allowed-tools"]
 
