@@ -481,3 +481,39 @@ def test_引用外の改行を含むコマンドは通さない(env, tool, sep, 
 
     assert result.returncode == 0
     assert result.stdout == ""
+
+
+def _symlink_plan(root: Path, name: str, tmp_path: Path) -> Path:
+    """vault 直下の計画ファイルを、別の場所のファイルへのシンボリックリンクにする。"""
+    target = tmp_path / "target.json"
+    target.write_text("{}", encoding="utf-8")
+    link = root / name
+    try:
+        os.symlink(target, link)
+    except OSError:
+        pytest.skip(reason="この環境ではシンボリックリンクを作れない")
+    return link
+
+
+@pytest.mark.parametrize("name", [".vault-kb-plan.json", ".vault-kb-wiki-plan.json"])
+@pytest.mark.parametrize("tool", ["Read", "Write", "Edit"])
+def test_計画ファイルがシンボリックリンクならRead_Write_Editを通さない(env, tmp_path, name, tool):
+    data, root, _ = env
+    link = _symlink_plan(root, name, tmp_path)
+
+    result = approve(data, tool, {"file_path": link.as_posix()})
+
+    assert result.stdout == ""
+
+
+@pytest.mark.parametrize(
+    ("name", "sub"),
+    [(".vault-kb-plan.json", "apply"), (".vault-kb-wiki-plan.json", "wiki-apply")],
+)
+def test_計画ファイルがシンボリックリンクならBashのコマンドを通さない(env, tmp_path, name, sub):
+    data, root, head = env
+    link = _symlink_plan(root, name, tmp_path)
+
+    result = approve(data, "Bash", {"command": f'{head} {sub} "{link.as_posix()}"'})
+
+    assert result.stdout == ""

@@ -488,3 +488,20 @@ def test_wikiの不正な計画は終了コード2で何も書かない(configur
 
     assert result.returncode == 2
     assert not (root / ".wiki" / "queries").exists()
+
+
+def test_wiki_applyは固定の計画がシンボリックリンクなら拒否する(configured, tmp_path):
+    root, data = configured
+    target = tmp_path / "target.json"
+    target.write_text(json.dumps({"ops": [_query_op("memo")]}), encoding="utf-8")
+    plan = root / WIKI_PLAN
+    try:
+        os.symlink(target, plan)
+    except OSError:
+        pytest.skip(reason="この環境ではシンボリックリンクを作れない")
+
+    result = kb(data, "wiki-apply", str(plan))
+
+    assert result.returncode == 2
+    assert target.exists()
+    assert not (root / ".wiki" / "queries").exists()

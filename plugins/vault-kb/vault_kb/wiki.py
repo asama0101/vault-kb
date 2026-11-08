@@ -314,7 +314,9 @@ def _plan_page(vault: Vault, op: dict[str, Any], kind: str, now: datetime) -> tu
             raise ValueError("ページがないので body を省略できません")
         if diff["added"] or diff["changed"] or diff["removed"]:
             raise ValueError("移動のほかに差分があるので body が要ります")
-        body, unread = old_body, old_unread
+        # 消えた資料は引き継がない（残すと「対象の資料でないもの」で拒否される）
+        current_names = {e["resource"] for e in entries}
+        body, unread = old_body, [r for r in old_unread if r in current_names]
     else:
         unread = _strings(op, "unread", [])
     names = {e["resource"] for e in entries}
@@ -340,7 +342,7 @@ def _plan_page(vault: Vault, op: dict[str, Any], kind: str, now: datetime) -> tu
         backup = _inside(vault, vault.wiki_dir / ".bak" / kind / f"{name}.md")
         writes.append((backup, path.read_bytes().decode("utf-8", errors="replace")))
     writes.append((path, bundle.note_text(new_meta, body)))
-    if "body" not in op:
+    if op.get("body") is None:
         return writes, ""
     if kind == "project":
         return writes, f"**Synthesized** {name}（ノート {len(entries)} 件）"

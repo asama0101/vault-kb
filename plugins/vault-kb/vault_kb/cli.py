@@ -75,7 +75,8 @@ def _configure(data_dir: Path, vault_arg: str) -> dict[str, Any]:
 
 
 def _same_file(path: Path, expected: Path) -> bool:
-    return path.resolve() == expected.resolve()
+    """同じファイルを指し、固定の計画自体がシンボリックリンクでないか。"""
+    return path.resolve() == expected.resolve() and not expected.is_symlink()
 
 
 def _run(args: argparse.Namespace, data_dir: Path) -> dict[str, Any] | list[Any] | None:

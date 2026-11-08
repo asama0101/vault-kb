@@ -446,3 +446,20 @@ def test_claude_plugin_validateがstrictで通る(target):
     )
 
     assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_wiki_mdはbusyのときpageのopを残してqueryのopを同じopsに足し1回だけやり直す():
+    text = WIKI_GUIDE.read_text(encoding="utf-8")
+
+    # 単一の計画ファイルに query を書き直すと、busy だった page の op が黙って消える
+    assert "`page` の op は計画に残したまま" in text
+    assert "同じ計画の `ops` に足し（計画を書き直して `page` の op を消さない）" in text
+    assert "保存できなかったもの（統合ページと回答の両方）を 1 行で利用者に伝えて終わる" in text
+    assert "次の `query` の op を、その同じ計画の `ops` に足す" in text
+
+
+def test_wiki_mdは壊れたページの作り直しで旧ページの取り消し線を写させる():
+    text = WIKI_GUIDE.read_text(encoding="utf-8")
+
+    # 取り消し線の組が減る本文は wiki-apply が拒む
+    assert "旧ページの取り消し線の部分（`~~…~~（取り消し …）`）を、そのまま写す" in text

@@ -350,6 +350,11 @@ def _same(path: str | Path, expected: Path) -> bool:
     return Path(path).resolve() == expected.resolve()
 
 
+def _is_plan(path: str | Path, plan: Path) -> bool:
+    """計画ファイルを指すか。計画自体がシンボリックリンクなら不可（リンク先を読み書きさせない）。"""
+    return _same(path, plan) and not plan.is_symlink()
+
+
 def _is_own_command(
     command: str,
     data: Path,
@@ -374,10 +379,13 @@ def _is_own_command(
         return False
     sub, args = tokens[4], tokens[5:]
     if sub == "apply":
-        return "apply" in subs and plan is not None and len(args) == 1 and _same(args[0], plan)
+        return "apply" in subs and plan is not None and len(args) == 1 and _is_plan(args[0], plan)
     if sub in ("wiki-check", "wiki-apply"):
         return (
-            sub in subs and wiki_plan is not None and len(args) == 1 and _same(args[0], wiki_plan)
+            sub in subs
+            and wiki_plan is not None
+            and len(args) == 1
+            and _is_plan(args[0], wiki_plan)
         )
     return sub in subs and not args
 
@@ -398,8 +406,8 @@ def _approve(data: Path) -> int:
         elif tool in ("Read", "Write", "Edit"):
             path = tool_input["file_path"]
             allowed = (
-                (plan is not None and _same(path, plan))
-                or (wiki_plan is not None and _same(path, wiki_plan))
+                (plan is not None and _is_plan(path, plan))
+                or (wiki_plan is not None and _is_plan(path, wiki_plan))
                 or (tool == "Read" and (_same(path, RECONCILE) or _same(path, WIKI_GUIDE)))
             )
         else:

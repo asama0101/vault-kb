@@ -741,3 +741,33 @@ def test_applyは原本_ノート_indexを書き換えない(vault, data_dir):
 
     assert snapshot(vault) == before
     assert (vault.wiki_dir / f"projects/{P}.md").is_file()
+
+
+def test_apply_pageのbodyがnullなら省略と同じ移動だけの更新でログを足さない(vault, data_dir):
+    two(vault)
+    run(vault, data_dir, pop(vault, body=f"記述（出典: {r('a.pdf')}）"))
+    move(vault, "a.pdf", "a2.pdf", "a")
+    op = pop(vault, body=None)
+
+    assert run(vault, data_dir, op) == {"written": [f".wiki/projects/{P}.md"], "logged": 0}
+    assert page_of(vault)[1] == f"記述（出典: {r('a2.pdf')}）"
+
+
+def test_apply_pageのbody省略では消えた未読の資料を引き継がず通る(vault, data_dir):
+    two(vault)
+    note(vault, "c.pdf", sha="c")
+    run(vault, data_dir, pop(vault, body=f"記述（出典: {r('a.pdf')}）", unread=[r("c.pdf")]))
+    (vault.notes_dir / f"{r('c.pdf')}.md").unlink()
+    op = pop(vault)
+    del op["body"]
+
+    run(vault, data_dir, op)
+
+    assert page_of(vault)[0]["unread"] == []
+
+
+def test_apply_pageの明示したunreadは対象外の資料を厳密に拒否する(vault, data_dir):
+    two(vault)
+
+    with pytest.raises(ValueError, match="unread"):
+        run(vault, data_dir, pop(vault, unread=[r("gone.pdf")]))
