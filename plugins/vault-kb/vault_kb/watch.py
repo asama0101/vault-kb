@@ -79,7 +79,7 @@ def notify_lines(status: dict[str, Any]) -> list[str]:
     if status["pending"] > 0:
         lines.append(
             f"片づけ待ちが {status['pending']} 件あります"
-            "（/vault-kb:watch か /vault-kb:ask で片づきます）"
+            "（/vault-kb:sweep・/vault-kb:watch・/vault-kb:ask で片づきます）"
         )
     if status["conflicts"] > 0:
         lines.append(

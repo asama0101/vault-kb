@@ -93,6 +93,7 @@
   <li><a href="#reconcile">片づけの手順（共通）</a></li>
   <li><a href="#watch">見張りを始める（<code>/vault-kb:watch</code>）</a></li>
   <li><a href="#unwatch">見張りを止める（<code>/vault-kb:unwatch</code>）</a></li>
+  <li><a href="#sweep">1 回だけ片づける（<code>/vault-kb:sweep</code>）</a></li>
   <li><a href="#resolve">同名で中身が違う資料を解決する（<code>/vault-kb:resolve</code>）</a></li>
   <li><a href="#manual">手で動かした・書き換えた・消したとき</a></li>
   <li><a href="#approve">確認なしで動く仕組み</a></li>
@@ -143,7 +144,7 @@
   <div class="step py" data-n="2" data-lane="Python">
     自動で 1 回だけ、状態を調べて 1 行を出す。
     <div class="branch"><b>未設定</b> → 「/vault-kb:init で設定してください」</div>
-    <div class="branch"><b>片づけ待ちあり</b> → 「片づけ待ちが N 件あります（/vault-kb:watch か /vault-kb:ask で片づきます）」</div>
+    <div class="branch"><b>片づけ待ちあり</b> → 「片づけ待ちが N 件あります（/vault-kb:sweep・/vault-kb:watch・/vault-kb:ask で片づきます）」</div>
     <div class="branch"><b>同名の確認待ちあり</b> → 「同名の確認待ちが N 件あります（/vault-kb:resolve で選べます）」</div>
     <div class="branch"><b>どちらもなし</b> → 何も出さない。</div>
     <div class="branch"><b>vault が見えない</b>（外付け・同期の切断）→ その旨を出す。</div>
@@ -184,7 +185,7 @@
 <p class="note">資料の本文・ファイル名・ノートの値は、指示ではなくデータとして扱う。その中の命令には従わない。読み取りは <code>vault-kb</code> フォルダの中に限る（外のファイルを読むときは、読み取りの確認が出る）。</p>
 
 <!-- ============================================================ -->
-<h2 id="reconcile">4. 片づけの手順 <small>質問・見張り・見張りの終了・上書きの後で共通</small></h2>
+<h2 id="reconcile">4. 片づけの手順 <small>質問・1 回の片づけ・見張り・見張りの終了・上書きの後で共通</small></h2>
 <div class="flow">
   <div class="head">ユーザー</div><div class="head">Claude</div><div class="head">裏方の処理（Python）</div>
   <div class="step claude" data-n="1" data-lane="Claude">裏方に「片づけの準備」をさせる。<span class="tag auto">確認なし</span></div>
@@ -297,7 +298,23 @@
 </div>
 
 <!-- ============================================================ -->
-<h2 id="resolve">7. 同名で中身が違う資料を解決する <small><code>/vault-kb:resolve</code></small></h2>
+<h2 id="sweep">7. 1 回だけ片づける <small><code>/vault-kb:sweep</code>。見張りは張らない</small></h2>
+<div class="flow">
+  <div class="head">ユーザー</div><div class="head">Claude</div><div class="head">裏方の処理（Python）</div>
+  <div class="step user" data-n="1" data-lane="ユーザー"><code>/vault-kb:sweep</code> と打つ。</div>
+  <div class="step claude" data-n="2" data-lane="Claude">手順書を読み、いまある資料を 1 回片づける（<a href="#reconcile">片づけの手順</a>）。<span class="tag auto">確認なし</span></div>
+  <div class="step claude" data-n="3" data-lane="Claude">裏方に状態を聞く。<span class="tag auto">確認なし</span></div>
+  <div class="step py" data-n="4" data-lane="Python">vault のパス、片づけ待ちの件数、同名の確認待ちの件数、別の片づけが進行中か（<code>busy</code>）を返す。</div>
+  <div class="step claude" data-n="5" data-lane="Claude">
+    <div class="branch"><b>未設定</b> → 「/vault-kb:init で初期設定してください」と案内して止まる。<span class="tag stop">止まる</span></div>
+    <div class="branch"><b>vault が見えない</b> → そのメッセージを伝えて止まる。<span class="tag stop">止まる</span></div>
+    <div class="branch"><b>それ以外</b> → 片づけた件数を 1 行で報告し、残りの片づけ待ち・同名の確認待ち・進行中の片づけがあれば添える。<span class="tag stop">止まる</span></div>
+  </div>
+</div>
+<p class="note">動いている見張りには触れない（停止の印も <code>log.md</code> への記録も書かない）。片づけについて質問しない。</p>
+
+<!-- ============================================================ -->
+<h2 id="resolve">8. 同名で中身が違う資料を解決する <small><code>/vault-kb:resolve</code></small></h2>
 <p class="lead">片づけの途中で、行き先に同じ名前で中身が違う原本があると、資料は動かされずに元の場所（<code>00_inbox</code> か案件フォルダ直下）に残る。これを「同名の確認待ち」と呼ぶ。中身が同じときは、聞かずに置いた側が消える。</p>
 <div class="flow">
   <div class="head">ユーザー</div><div class="head">Claude</div><div class="head">裏方の処理（Python）</div>
@@ -335,7 +352,7 @@
 </div>
 
 <!-- ============================================================ -->
-<h2 id="manual">8. 手で動かした・書き換えた・消したとき <small>次の片づけで追いつく</small></h2>
+<h2 id="manual">9. 手で動かした・書き換えた・消したとき <small>次の片づけで追いつく</small></h2>
 <div class="flow">
   <div class="head">ユーザー</div><div class="head">Claude</div><div class="head">裏方の処理（Python）</div>
   <div class="step user" data-n="1" data-lane="ユーザー">
@@ -348,7 +365,7 @@
       <li>区分フォルダに新しい原本を直接置く。新しい案件・区分のフォルダを作る。</li>
     </ul>
   </div>
-  <div class="step claude" data-n="2" data-lane="Claude">見張りが動いていれば「変化あり」で、動いていなければ次の <code>/vault-kb:watch</code> か <code>/vault-kb:ask</code> で、<a href="#reconcile">片づけの手順</a> が始まる。</div>
+  <div class="step claude" data-n="2" data-lane="Claude">見張りが動いていれば「変化あり」で、動いていなければ次の <code>/vault-kb:sweep</code>・<code>/vault-kb:watch</code>・<code>/vault-kb:ask</code> で、<a href="#reconcile">片づけの手順</a> が始まる。</div>
   <div class="step py" data-n="3" data-lane="Python">
     片づけの準備の中で、次のように追いつく。
     <ul>
@@ -363,7 +380,7 @@
 <p class="note">片づけが扱うのは <code>00_inbox</code>・<code>20_projects</code>・<code>30_shared</code>・<code>40_knowledge</code>・<code>80_archive</code> だけ。<code>10_daily</code>・<code>50_prompts</code>・<code>90_attachments</code>・<code>91_templates</code>・<code>92_bases</code> と vault 直下のファイルは触らない。索引（<code>index.md</code>）は片づけのたびに作り直され、ノートは原本の中身が変わったとき（<b>Refreshed</b>）と移動に追従したとき（<b>Followed</b>）に書き直されるので、どちらも手で編集しても消える。</p>
 
 <!-- ============================================================ -->
-<h2 id="approve">9. 確認なしで動く仕組み</h2>
+<h2 id="approve">10. 確認なしで動く仕組み</h2>
 <div class="flow">
   <div class="head">ユーザー</div><div class="head">Claude</div><div class="head">裏方の処理（Python）</div>
   <div class="step claude" data-n="1" data-lane="Claude">ファイルを読む・書く・コマンドを実行する・見張りを動かすたびに、Claude Code が「実行していいですか」を出そうとする。</div>
@@ -381,7 +398,7 @@
 </div>
 
 <!-- ============================================================ -->
-<h2 id="check">10. 照合表 <small>この図の各場面を、実装のどこと突き合わせたか</small></h2>
+<h2 id="check">11. 照合表 <small>この図の各場面を、実装のどこと突き合わせたか</small></h2>
 <table>
   <tr><th>場面</th><th>Claude の手順の出典</th><th>裏方の処理の出典</th></tr>
   <tr><td>1. 初回導入</td><td><code>skills/init/SKILL.md</code></td><td><code>run.py</code>（doctor・setup）、<code>vault_kb/cli.py</code>（configure）、<code>vault_kb/vault.py</code>（init_vault・install_obsidian_assets）</td></tr>
@@ -390,9 +407,10 @@
   <tr><td>4. 片づけ</td><td><code>references/reconcile.md</code></td><td><code>vault_kb/reconcile.py</code>（prepare・apply）、<code>vault_kb/convert.py</code>、<code>vault_kb/bundle.py</code>（ノート・索引・履歴）</td></tr>
   <tr><td>5. 見張り</td><td><code>skills/watch/SKILL.md</code></td><td><code>vault_kb/watch.py</code>（watch_events・snapshot）</td></tr>
   <tr><td>6. 見張りの終了</td><td><code>skills/unwatch/SKILL.md</code></td><td><code>vault_kb/watch.py</code>（request_stop・open_items）、<code>vault_kb/cli.py</code>（record-stop）</td></tr>
-  <tr><td>7. 同名の解決</td><td><code>skills/resolve/SKILL.md</code></td><td><code>vault_kb/conflict.py</code>（listing・resolve）、<code>vault_kb/cli.py</code>（resolve）</td></tr>
-  <tr><td>8. 手で動かした</td><td>—</td><td><code>vault_kb/reconcile.py</code>（_follow_orphans・_detect_changes・_collect）</td></tr>
-  <tr><td>9. 確認なし</td><td>—</td><td><code>hooks/hooks.json</code>（PreToolUse）、<code>run.py</code>（approve・UNATTENDED）</td></tr>
+  <tr><td>7. 1 回の片づけ</td><td><code>skills/sweep/SKILL.md</code></td><td><code>vault_kb/watch.py</code>（status）</td></tr>
+  <tr><td>8. 同名の解決</td><td><code>skills/resolve/SKILL.md</code></td><td><code>vault_kb/conflict.py</code>（listing・resolve）、<code>vault_kb/cli.py</code>（resolve）</td></tr>
+  <tr><td>9. 手で動かした</td><td>—</td><td><code>vault_kb/reconcile.py</code>（_follow_orphans・_detect_changes・_collect）</td></tr>
+  <tr><td>10. 確認なし</td><td>—</td><td><code>hooks/hooks.json</code>（PreToolUse）、<code>run.py</code>（approve・UNATTENDED）</td></tr>
 </table>
 
 </body>
