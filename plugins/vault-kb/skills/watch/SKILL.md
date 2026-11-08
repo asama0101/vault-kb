@@ -2,7 +2,7 @@
 name: watch
 description: vault の `00_inbox` と案件のフォルダの変化を見張り、置かれた資料を案件・区分のフォルダへ自動で片づけ続ける。利用者が /vault-kb:watch と打ったセッションの中で、会話と並行して動く（セッションを閉じると止まる）。利用者が打ったときだけ使い、それ以外の場面では呼ばない。初期設定には init、資料の検索・質問には ask を使う。
 disable-model-invocation: true
-allowed-tools: Bash(python "${CLAUDE_PLUGIN_ROOT}/run.py" --data "${CLAUDE_PLUGIN_DATA}" prepare) Bash(python "${CLAUDE_PLUGIN_ROOT}/run.py" --data "${CLAUDE_PLUGIN_DATA}" apply *) Bash(python "${CLAUDE_PLUGIN_ROOT}/run.py" --data "${CLAUDE_PLUGIN_DATA}" release) Monitor Read(//**/vault-kb/.vault-kb-plan.json) Read(//**/references/reconcile.md) Edit(//**/vault-kb/.vault-kb-plan.json)
+allowed-tools: Bash(python "${CLAUDE_PLUGIN_ROOT}/run.py" --data "${CLAUDE_PLUGIN_DATA}" prepare) Bash(python "${CLAUDE_PLUGIN_ROOT}/run.py" --data "${CLAUDE_PLUGIN_DATA}" apply *) Monitor Read(//**/vault-kb/.vault-kb-plan.json) Read(//**/references/reconcile.md) Edit(//**/vault-kb/.vault-kb-plan.json)
 compatibility: Windows 専用。Python 3.12〜3.14。
 ---
 

@@ -7,7 +7,7 @@
 - setup [--yes]: 専用環境（置き場の venv）を作る。--yes なしは、作成内容を表示して止まる。
 - approve: PreToolUse フック。stdin のツール呼び出しが vault-kb 自身の片づけの操作なら
   allow を出す。それ以外は何も出さない（通常の確認に任せる）。常に終了コード 0。
-- それ以外（configure / status / prepare / apply / release / reindex / watch / unwatch /
+- それ以外（configure / status / prepare / apply / reindex / watch / unwatch /
   record-stop）:
   専用環境の Python で vault_kb を実行する。
 
@@ -41,7 +41,7 @@ MIN_FREE_MB = 500
 PYPI_URL = "https://pypi.org/simple/"
 PLAN_NAME = ".vault-kb-plan.json"
 # 確認なしで通す run.py のサブコマンド（init の setup --yes・configure は確認を出したまま）
-UNATTENDED = {"status", "prepare", "release", "watch", "unwatch", "record-stop"}
+UNATTENDED = {"status", "prepare", "watch", "unwatch", "record-stop"}
 
 
 def _split_data(argv: list[str]) -> tuple[Path | None, list[str]]:

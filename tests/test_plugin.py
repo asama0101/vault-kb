@@ -58,20 +58,20 @@ def allowed_commands(skill: str) -> list[str]:
     return re.findall(r'run\.py" --data "\$\{CLAUDE_PLUGIN_DATA\}" ([^)]+)\)', tools)
 
 
-def test_askは状態確認と片づけとロックの解除だけを承認なしで許可する():
-    assert allowed_commands("ask") == ["status", "prepare", "apply *", "release"]
+def test_askは状態確認と片づけのコマンドだけを承認なしで許可する():
+    assert allowed_commands("ask") == ["status", "prepare", "apply *"]
 
 
 def test_watchは片づけのコマンドとMonitorだけを許可する():
     tools = frontmatter(PLUGIN / "skills/watch/SKILL.md")["allowed-tools"].split()
 
-    assert allowed_commands("watch") == ["prepare", "apply *", "release"]
+    assert allowed_commands("watch") == ["prepare", "apply *"]
     assert "Monitor" in tools
 
 
 def test_sweepは状態確認と片づけのコマンドだけを承認なしで許可する():
     # unwatch は動いている見張りを止めるので、sweep には許可しない
-    assert allowed_commands("sweep") == ["status", "prepare", "apply *", "release"]
+    assert allowed_commands("sweep") == ["status", "prepare", "apply *"]
 
 
 def test_unwatchは停止と片づけと確認事項のコマンドだけを承認なしで許可する():
@@ -79,7 +79,6 @@ def test_unwatchは停止と片づけと確認事項のコマンドだけを承�
         "unwatch",
         "prepare",
         "apply *",
-        "release",
         "record-stop",
     ]
 
@@ -211,11 +210,27 @@ def test_reconcileはrunpyのコマンドを1行そのままで実行させる()
     assert "足さない" in text
 
 
-def test_reconcileの手順はapplyの失敗時にreleaseして止まる():
+def test_reconcileの手順はapplyの失敗時に報告して止まり_busyなら何もしない():
     text = REFERENCES.read_text(encoding="utf-8")
 
     assert "終了コード 2" in text
-    assert 'run.py" --data "${CLAUDE_PLUGIN_DATA}" release' in text
+    assert "release" not in text
+    assert "lock_token" not in text
+    assert '{"busy": true}' in text
+
+
+def test_reconcileの手順は別の実行に計画を使われたapplyの失敗で闇雲に再実行しない():
+    text = REFERENCES.read_text(encoding="utf-8")
+
+    assert "別の実行に使われた" in text
+    assert "次の `prepare` が拾う" in text
+
+
+@pytest.mark.parametrize("skill", ["watch", "sweep", "ask", "unwatch", "init"])
+def test_スキルのallowed_toolsにreleaseがない(skill):
+    tools = frontmatter(PLUGIN / f"skills/{skill}/SKILL.md")["allowed-tools"]
+
+    assert "release" not in tools
 
 
 def test_watchは見張りを張り直す前に片づけを1回行う():

@@ -55,7 +55,7 @@ def plan_of(root: Path) -> Path:
     return root / ".vault-kb-plan.json"
 
 
-@pytest.mark.parametrize("sub", ["status", "prepare", "release", "watch", "unwatch", "record-stop"])
+@pytest.mark.parametrize("sub", ["status", "prepare", "watch", "unwatch", "record-stop"])
 def test_自分のrun_pyの片づけのコマンドを許可する(env, sub):
     data, _, head = env
 
@@ -63,6 +63,14 @@ def test_自分のrun_pyの片づけのコマンドを許可する(env, sub):
 
     assert result.returncode == 0
     assert json.loads(result.stdout) == ALLOW
+
+
+def test_releaseは承認なしで通さない(env):
+    data, _, head = env
+
+    result = approve(data, "Bash", {"command": f"{head} release"})
+
+    assert result.stdout == ""
 
 
 def test_計画ファイルを渡したapplyを許可する(env):
