@@ -397,3 +397,94 @@ def test_conflictsとresolveはサブコマンドにない():
     for argv in (["conflicts"], ["resolve", "x", "overwrite"]):
         with pytest.raises(SystemExit):
             cli._parser().parse_args(argv)
+
+
+WIKI_PLAN = ".vault-kb-wiki-plan.json"
+
+
+def _query_op(slug: str) -> dict:
+    return {
+        "op": "query",
+        "question": "質問",
+        "answer": "回答",
+        "evidence": [],
+        "scope": [],
+        "slug": slug,
+    }
+
+
+def test_wiki_checkは複数のrequestをresultsで返し計画を消さない(configured):
+    root, data = configured
+    plan = root / WIKI_PLAN
+    requests = [{"kind": "query", "file": "a.md"}, {"kind": "query", "file": "b.md"}]
+    plan.write_text(json.dumps({"requests": requests}), encoding="utf-8")
+
+    result = kb(data, "wiki-check", str(plan))
+
+    assert result.returncode == 0, result.stderr
+    results = json.loads(result.stdout)["results"]
+    assert [r["file"] for r in results] == ["a.md", "b.md"]
+    assert plan.exists()
+
+
+def test_wiki_applyはページを書き固定の計画ファイルを消す(configured):
+    root, data = configured
+    plan = root / WIKI_PLAN
+    plan.write_text(json.dumps({"ops": [_query_op("memo")]}), encoding="utf-8")
+
+    result = kb(data, "wiki-apply", str(plan))
+
+    assert result.returncode == 0, result.stderr
+    written = json.loads(result.stdout)["written"]
+    assert len(written) == 1
+    assert (root / written[0]).is_file()
+    assert not plan.exists()
+
+
+def test_wiki_applyのbusyでは計画ファイルを消さない(configured):
+    root, data = configured
+    data.joinpath("reconcile.lock").write_text(
+        datetime.now().astimezone().isoformat(), encoding="utf-8"
+    )
+    plan = root / WIKI_PLAN
+    plan.write_text(json.dumps({"ops": [_query_op("memo")]}), encoding="utf-8")
+
+    result = kb(data, "wiki-apply", str(plan))
+
+    assert result.returncode == 0, result.stderr
+    assert json.loads(result.stdout) == {"busy": True}
+    assert plan.exists()
+
+
+def test_wiki_applyは固定の計画以外のパスを拒否する(configured, tmp_path):
+    root, data = configured
+    other = tmp_path / "other.json"
+    other.write_text(json.dumps({"ops": [_query_op("memo")]}), encoding="utf-8")
+
+    result = kb(data, "wiki-apply", str(other))
+
+    assert result.returncode == 2
+    assert other.exists()
+    assert not (root / ".wiki" / "queries").exists()
+
+
+@pytest.mark.parametrize(
+    ("sub", "text"),
+    [
+        ("wiki-check", "{"),
+        ("wiki-check", '{"requests": "x"}'),
+        ("wiki-check", '{"requests": [1]}'),
+        ("wiki-apply", "{"),
+        ("wiki-apply", '{"ops": "x"}'),
+        ("wiki-apply", "{}"),
+    ],
+)
+def test_wikiの不正な計画は終了コード2で何も書かない(configured, sub, text):
+    root, data = configured
+    plan = root / WIKI_PLAN
+    plan.write_text(text, encoding="utf-8")
+
+    result = kb(data, sub, str(plan))
+
+    assert result.returncode == 2
+    assert not (root / ".wiki" / "queries").exists()
