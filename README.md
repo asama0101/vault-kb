@@ -58,14 +58,7 @@ Claude Code と Obsidian を使う人向けのプラグイン。Obsidian の vau
 
 ### ライブラリの入れ先
 
-| 入れ先 | 向く場合 | 入る場所 |
-|---|---|---|
-| venv（既定・お勧め） | 初めて導入する | Claude Code がプラグインごとに用意するデータフォルダの `venv` |
-| システムの Python | 固定のバージョンがすでに揃っている | 実行中の Python のユーザー領域（`pip install --user`） |
-
-- システムの Python に入れると、他のツールが使う同名のライブラリが、固定のバージョンに変わることがある。避けたいときは、venv を選ぶ。
-- 仮想環境（venv・conda など）の中では、システムの Python を選べない。入れたあとは、その Python から読み込めるかも確かめる。
-- システムの Python に固定のバージョンが揃っていれば、入れずにそれを使う。venv も有効なときは、venv を先に使う。
+ライブラリは、Claude Code がプラグインごとに用意するデータフォルダの `venv` に入る。システムの Python に固定のバージョンがすでに揃っていれば、入れずにそれを使う。venv も有効なときは、venv を先に使う。
 
 ### 診断
 
@@ -87,8 +80,8 @@ OK  OS
 OK  Python
 OK  python コマンド: C:\...\python.exe
 NG  専用環境: 専用環境が未作成です（システムの Python: markitdown が未導入です）
-      対処（どちらか 1 つ。実行の承認が要る）: ...
-      Claude Code では /vault-kb:init で選べる。
+      対処（実行の承認が要る）: ...
+      Claude Code では /vault-kb:init で実行できる。
 NG  vault: vault が未設定です
 ```
 
@@ -112,7 +105,7 @@ claude plugin update vault-kb@vault-kb
 claude plugin uninstall vault-kb@vault-kb
 ```
 
-システムの Python に入れた場合、そのライブラリは消えない。`pip uninstall markitdown` で、本体を消せる。依存のライブラリ（numpy・pandas など）は、他のツールが使っていないかを確かめてから消す。
+システムの Python に入れてあった場合、そのライブラリは消えない。`pip uninstall markitdown` で、本体を消せる。依存のライブラリ（numpy・pandas など）は、他のツールが使っていないかを確かめてから消す。
 
 ## 使い方
 

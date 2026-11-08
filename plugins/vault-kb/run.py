@@ -4,8 +4,7 @@
 
 - doctor: 診断だけを行う（何も変更しない）。OS・Python・python コマンド・専用環境・vault を確かめ、
   足りないものには対処を表示する。
-- setup [--mode venv|system] [--yes]: 専用環境を作る。venv は置き場の venv に、system は実行中の
-  Python に入れる。既定は venv。--yes なしは、作成内容を表示して止まる。
+- setup [--yes]: 専用環境（置き場の venv）を作る。--yes なしは、作成内容を表示して止まる。
 - approve: PreToolUse フック。stdin のツール呼び出しが vault-kb 自身の片づけの操作なら
   allow を出す。それ以外は何も出さない（通常の確認に任せる）。常に終了コード 0。
 - それ以外（configure / status / prepare / apply / release / reindex / watch / unwatch /
@@ -40,7 +39,6 @@ MAX_PYTHON = (3, 15)  # この版は含まない
 APPROX_SIZE = "約 300 MB"
 MIN_FREE_MB = 500
 PYPI_URL = "https://pypi.org/simple/"
-MODES = ("venv", "system")
 PLAN_NAME = ".vault-kb-plan.json"
 # 確認なしで通す run.py のサブコマンド（init の setup --yes・configure は確認を出したまま）
 UNATTENDED = {"status", "prepare", "release", "watch", "unwatch", "record-stop"}
@@ -113,8 +111,7 @@ def _guide(data: Path, problem: str) -> str:
         f"専用環境が使えません: {problem}\n"
         f"使用中の Python: {sys.executable}\n"
         f"置き場: {data}\n"
-        "利用者の承認を得て、`setup --yes`（システムの Python に入れるなら "
-        "`setup --mode system --yes`）を実行してください。"
+        "利用者の承認を得て、`setup --yes` を実行してください。"
     )
 
 
@@ -263,10 +260,9 @@ def _doctor(data: Path) -> int:
             runtime_name,
             runtime_problem,
             [
-                "対処（どちらか 1 つ。実行の承認が要る）:",
-                f"  venv に入れる（推奨）: {run_py} setup --mode venv --yes",
-                f"  システムの Python に入れる: {run_py} setup --mode system --yes",
-                "Claude Code では /vault-kb:init で選べる。",
+                "対処（実行の承認が要る）:",
+                f"  {run_py} setup --yes",
+                "Claude Code では /vault-kb:init で実行できる。",
             ],
         ),
     ]
@@ -332,66 +328,6 @@ def _setup(data: Path, approved: bool) -> int:
         return 1
     _marker(data).write_text(_requirements_hash(), encoding="utf-8")
     print(f"専用環境を作成しました: {venv_dir}")
-    return 0
-
-
-def _setup_system(data: Path, approved: bool) -> int:
-    """実行中の Python のユーザー領域（pip install --user）に入れる。"""
-    if sys.prefix != sys.base_prefix:  # --user が使えず、利用者の仮想環境を書き換えてしまう
-        print(
-            f"仮想環境の中で動いています（{sys.prefix}）。システムの Python には入れられません。"
-            "仮想環境の外の Python で実行するか、`setup --mode venv` を使ってください。",
-            file=sys.stderr,
-        )
-        return 3
-    command = [sys.executable, "-m", "pip", "install", "--user", "--disable-pip-version-check"]
-    if not approved:
-        print(
-            "システムの Python にパッケージを入れます（利用者の承認が必要です）。\n"
-            f"- 実行: {' '.join(command)} -r requirements.txt\n"
-            f"- 内容: markitdown と依存ライブラリ（{_requirement_count()} 件。PyPI から取得）\n"
-            f"- 容量: {APPROX_SIZE}\n"
-            "- 注意: 他のツールが使う同名のパッケージの版が、固定の版に変わることがあります。\n"
-            "  避けたいときは、venv に入れてください（`setup --mode venv`）。\n"
-            "承認する場合は、`setup --mode system --yes` を付けて再実行してください。"
-        )
-        return 3
-    if problem := _python_problem(need_venv=False):
-        print(_guide(data, problem), file=sys.stderr)
-        return 3
-    data.mkdir(parents=True, exist_ok=True)
-    try:
-        # cwd は置き場にする（-m は cwd の同名モジュールを先に読むため、利用者のフォルダを避ける）
-        subprocess.run([*command, "-r", str(REQUIREMENTS)], check=True, cwd=data)
-    except subprocess.CalledProcessError as error:
-        print(f"パッケージの導入に失敗しました（終了コード {error.returncode}）", file=sys.stderr)
-        return 1
-    # pip が成功しても、読めないことがある（ユーザー領域が無効など）。別プロセスで確かめる
-    check = subprocess.run(
-        [
-            sys.executable,
-            "-c",
-            "import sys; sys.path.insert(0, sys.argv[1]); import run; "
-            "print(run._packages_problem() or '')",
-            str(ROOT),
-        ],
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        env={**os.environ, "PYTHONUTF8": "1"},
-        cwd=data,
-        check=False,
-    )
-    if check.returncode != 0 or check.stdout.strip():
-        reason = check.stdout.strip() or check.stderr.strip()
-        print(
-            f"入れましたが、この Python から使えません: {reason}\n"
-            "ユーザー領域が無効（PYTHONNOUSERSITE など）の可能性があります。"
-            "`setup --mode venv` を使ってください。",
-            file=sys.stderr,
-        )
-        return 1
-    print(f"システムの Python に入れました: {sys.executable}")
     return 0
 
 
@@ -484,21 +420,13 @@ def main(argv: list[str]) -> int:
         return _doctor(data)
     if args[0] == "setup":
         rest = args[1:]
-        mode, unknown, values = "venv", [], iter(rest)
-        for arg in values:
-            if arg == "--mode":
-                mode = next(values, "")
-            elif arg != "--yes":
-                unknown.append(arg)  # `--mode=system` のような書き方で、黙って venv にしない
-        if mode not in MODES or unknown:
+        if set(rest) - {"--yes"}:
             print(
-                f"setup の引数は `--mode {'|'.join(MODES)}` と `--yes` だけです"
-                f"（受け取った引数: {' '.join(rest)}）",
+                f"setup の引数は `--yes` だけです（受け取った引数: {' '.join(rest)}）",
                 file=sys.stderr,
             )
             return 2
-        setup = _setup_system if mode == "system" else _setup
-        return setup(data, approved="--yes" in rest)
+        return _setup(data, approved="--yes" in rest)
     return _delegate(data, args)
 
 
