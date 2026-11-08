@@ -503,7 +503,8 @@ def test_apply_pageは移動の出典パスを連鎖や接頭辞で壊さず置�
     note(vault, "見積.xlsx")
     note(vault, "見積.xlsx.bak", sha="b")
     old, bak = r("見積.xlsx"), r("見積.xlsx.bak")
-    run(vault, data_dir, pop(vault, body=f"x（出典: {old}）\ny（出典: {bak}）\nz {old}."))
+    body = "x（出典: {0}）\ny（出典: {1}）\nz {0}.\n{0}に記載\n詳細は{0}。\n{0}_old"
+    run(vault, data_dir, pop(vault, body=body.format(old, bak)))
     move(vault, "見積.xlsx", "見積v2.xlsx", "a")
     op = pop(vault)
     del op["body"]
@@ -511,9 +512,29 @@ def test_apply_pageは移動の出典パスを連鎖や接頭辞で壊さず置�
     run(vault, data_dir, op)
 
     new = r("見積v2.xlsx")
-    assert page_of(vault)[1] == f"x（出典: {new}）\ny（出典: {bak}）\nz {new}."
+    # 日本語に接したパスは置き換え、ASCII の続き（.bak・_old）は別のパスとして残す
+    expected = body.format(new, bak).removesuffix(f"{new}_old") + f"{old}_old"
+    assert page_of(vault)[1] == expected
     swap = {"x/a.pdf": "x/b.pdf", "x/b.pdf": "x/a.pdf"}
     assert _replace_moved("x/a.pdf と x/b.pdf", swap) == "x/b.pdf と x/a.pdf"
+
+
+def test_apply_pageはunreadの資料の移動を追加として扱い_bodyを求める(vault, data_dir):
+    # unread は sha256 を持たず sources にも入らないので、移動の組にならない
+    two(vault)
+    run(vault, data_dir, pop(vault, unread=[r("b.pdf")]))
+    move(vault, "b.pdf", "b2.pdf", "b")
+    op = pop(vault)
+    del op["body"]
+
+    with pytest.raises(ValueError, match="body"):
+        run(vault, data_dir, op)
+    with pytest.raises(ValueError, match="unread"):  # 旧 resource はもう資料にない
+        run(vault, data_dir, pop(vault, unread=[r("b.pdf")]))
+
+    run(vault, data_dir, pop(vault, unread=[r("b2.pdf")]))
+
+    assert page_of(vault)[0]["unread"] == [r("b2.pdf")]
 
 
 def test_apply_pageは上書きの前に旧ページを退避し_取り消し線が減る本文を拒否する(vault, data_dir):

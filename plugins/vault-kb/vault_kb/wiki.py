@@ -268,7 +268,8 @@ def _replace_moved(text: str, moves: dict[str, str]) -> str:
     if not moves:
         return text
     olds = "|".join(re.escape(old) for old in sorted(moves, key=len, reverse=True))
-    pattern = rf"(?<![\w./-])(?:{olds})(?![\w/-]|\.\w)"
+    # 境界は ASCII だけで見る（日本語の文に接したパスも置き換える）
+    pattern = rf"(?<![A-Za-z0-9_./-])(?:{olds})(?![A-Za-z0-9_/-]|\.[A-Za-z0-9])"
     return re.sub(pattern, lambda m: moves[m[0]], text)
 
 
