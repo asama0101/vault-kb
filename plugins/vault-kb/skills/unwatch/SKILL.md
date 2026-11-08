@@ -3,7 +3,7 @@ name: unwatch
 description: /vault-kb:watch で動かした見張りを止める。最後に 1 回片づけてから、終了時点で未解消の確認事項（片づけ待ち・進行中のロック・失敗・文字を取り出せていない資料）を一覧にして示す。別のセッションで動かした見張りも止められる。利用者が /vault-kb:unwatch と打ったときだけ使い、それ以外の場面では呼ばない。見張りを始めるには watch を使う。
 disable-model-invocation: true
 allowed-tools: Bash(python "${CLAUDE_PLUGIN_ROOT}/run.py" --data "${CLAUDE_PLUGIN_DATA}" unwatch) Bash(python "${CLAUDE_PLUGIN_ROOT}/run.py" --data "${CLAUDE_PLUGIN_DATA}" prepare) Bash(python "${CLAUDE_PLUGIN_ROOT}/run.py" --data "${CLAUDE_PLUGIN_DATA}" apply *) Bash(python "${CLAUDE_PLUGIN_ROOT}/run.py" --data "${CLAUDE_PLUGIN_DATA}" release) Bash(python "${CLAUDE_PLUGIN_ROOT}/run.py" --data "${CLAUDE_PLUGIN_DATA}" record-stop) Read(//**/vault-kb/.vault-kb-plan.json) Read(//**/references/reconcile.md) Edit(//**/vault-kb/.vault-kb-plan.json)
-compatibility: Windows 専用。Python 3.10 以上。
+compatibility: Windows 専用。Python 3.12〜3.14。
 ---
 
 # vault-kb の見張りの終了
