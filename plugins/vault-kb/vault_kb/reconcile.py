@@ -536,7 +536,7 @@ def _source_path(vault: Vault, item: Item) -> Path:
 def _apply_item(
     vault: Vault, data_dir: Path, item: Item, clients: list[str], now: datetime
 ) -> tuple[Item, str | None, str]:
-    """1 項目を実行する。(結果, ログの 1 行。保留は None, 原本の sha)。
+    """1 項目を実行する。(結果, ログの 1 行。conflict は None, 原本の sha)。
 
     OSError・ValueError は 1 件の失敗。
     """

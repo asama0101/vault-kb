@@ -178,7 +178,7 @@
   <div class="head">ユーザー</div><div class="head">Claude</div><div class="head">裏方の処理（Python）</div>
   <div class="step claude" data-n="1" data-lane="Claude">裏方に「片づけの準備」をさせる。<span class="tag auto">確認なし</span></div>
   <div class="step py" data-n="2" data-lane="Python">
-    鍵をかける（別の片づけが 15 分以内に始めていれば <code>busy</code> を返して何もしない）。次に、判断の要らないものを先に直す。
+    <code>prepare</code> の間だけ鍵をかけ、返す前に必ず外す（別の片づけが 15 分以内に始めていれば <code>busy</code> を返して何もしない）。次に、判断の要らないものを先に直す。
     <ul>
       <li>原本が別の区分フォルダの下へ動いていた → ノートを対応する場所へ移し、案件・区分を合わせる（履歴に <b>Followed</b>）。</li>
       <li>原本がなくなっていた（<code>00_inbox</code> や案件フォルダの直下へ戻した場合を含む）→ ノートを消す（履歴に <b>Removed</b>）。開けない資料が本物かもしれないときは、消さずに次回に回す。</li>
@@ -191,7 +191,7 @@
       <li>集めるもの: <code>00_inbox</code> 直下、案件フォルダ直下、区分フォルダに手で置かれたノートのない資料、中身が変わった資料。</li>
       <li>対応する形式は文字に変換する。変換できない・文字が 20 字未満・対応しない形式（zip・png・csv など）は「読めない」印と理由を付ける。開けない（使用中など）は失敗として記録し、次回に回す。</li>
       <li>返すもの: 資料の一覧（名前、置かれた場所、本文の先頭 4000 字、読めるか、更新前の値）、既存の案件と区分の一覧（完了した案件は除く）、取引先の一覧、直したこと、失敗、警告、計画ファイルの置き場所。</li>
-      <li>資料が 1 件もなければ、索引を作り直して鍵を外す。</li>
+      <li>資料が 1 件もなければ、索引を作り直す。</li>
     </ul>
   </div>
   <div class="step claude" data-n="4" data-lane="Claude">
@@ -213,7 +213,7 @@
   <div class="step claude" data-n="6" data-lane="Claude">決めた内容を、vault 直下の計画ファイル（<code>.vault-kb-plan.json</code>）に書く。<span class="tag auto">確認なし</span></div>
   <div class="step claude" data-n="7" data-lane="Claude">裏方に「計画どおりに実行」させる。<span class="tag auto">確認なし</span></div>
   <div class="step py" data-n="8" data-lane="Python">
-    計画の形を検査する（不正なら何もせず誤りを返す）。1 件ずつ実行し、1 件の失敗は記録して次へ進む。
+    計画の形を検査する（不正なら何もせず誤りを返す）。検査のあとで鍵をかける（別の片づけが鍵を持っていれば <code>busy</code> を返して何も触らない）。1 件ずつ実行し、1 件の失敗は記録して次へ進む。
     <ul>
       <li>資料が vault の中の正しい場所にあるか、資料として扱える名前かを確かめる。</li>
       <li>行き先を決める: 案件名・区分名は既存に寄せる（大文字小文字の違いは吸収する。全角半角は吸収しない。全角半角まで吸収するのは取引先名だけ）。区分は既存に合わせるか、次の番号を付ける（<code>01_見積</code> のように。99 は <code>その他</code> 専用、98 まで）。新しい案件には <code>99_その他</code> も作る。</li>
@@ -221,11 +221,13 @@
       <li>原本を動かし、ノート（項目欄 ＋ 変換した本文）を <code>.notes</code> の中の対応する場所に書く（<b>Filed</b>）。中身が変わった資料はノートを作り直す（<b>Refreshed</b>）。</li>
       <li>行き先の絶対パス（ノートを含む）が 259 文字を超える（<code>00_inbox</code>・案件直下から来た資料だけ検査）、行き先に自分のノート以外の <code>.md</code> がある、などは、その 1 件の失敗にする。</li>
     </ul>
-    後始末: 履歴 <code>log.md</code> に追記 → 索引を作り直す → 鍵を外す → 変換結果を消す → 計画ファイルを消す。
+    後始末: 履歴 <code>log.md</code> に追記 → 索引を作り直す → 今回処理した資料の変換結果を消す → 計画ファイルを消す（鍵は実行中だけ）。
   </div>
   <div class="step claude" data-n="9" data-lane="Claude">
-    <div class="branch"><b>計画の誤り</b> → メッセージを読んで 1 回だけ直し、7 をやり直す。それでも失敗なら鍵を外し、失敗を 1 行で報告して終わる。<span class="tag stop">止まる</span></div>
-    <div class="branch"><b>実行時のエラー</b> → 鍵を外し、失敗を 1 行で報告して終わる。<span class="tag stop">止まる</span></div>
+    <div class="branch"><b>計画の誤り</b> → メッセージを読んで 1 回だけ直し、7 をやり直す。それでも失敗なら、失敗を 1 行で報告して終わる。<span class="tag stop">止まる</span></div>
+    <div class="branch"><b>実行時のエラー</b> → 失敗を 1 行で報告して終わる。<span class="tag stop">止まる</span></div>
+    <div class="branch"><b>busy</b> → 別の片づけが動いているので、何もしないで終わる。<span class="tag stop">止まる</span></div>
+    <div class="branch"><b>計画ファイルがない・別の実行のものに替わっている</b> → 「計画が別の実行に使われた」と 1 行で報告して終わる（残りは次の準備が拾う）。<span class="tag stop">止まる</span></div>
     <div class="branch"><b>成功</b> → 結果を 1 行で報告する。片づけた資料は置いた原本のフルパス。失敗した資料はフルパスと理由。同名で中身が違う資料（conflict）は、後から来た資料と既存の原本のフルパスを示し、動かす・消す指示を待つ。質問はしない。</div>
   </div>
 </div>
@@ -339,7 +341,7 @@
   <div class="step py" data-n="2" data-lane="Python">
     その直前に、プラグインが自動で呼ばれ、次のどれかに<b>完全に一致</b>するときだけ「確認なしで通す」と答える。それ以外は何も言わず、普段どおりの確認に任せる。
     <ul>
-      <li>自分の入口スクリプトと置き場を指す、片づけ用のコマンド（状態を見る・準備・計画の実行・鍵を外す・見張り・停止要求・停止の記録）。前後に <code>cd</code> や <code>&amp;&amp;</code> が付くと一致しない。</li>
+      <li>自分の入口スクリプトと置き場を指す、片づけ用のコマンド（状態を見る・準備・計画の実行・見張り・停止要求・停止の記録）。前後に <code>cd</code> や <code>&amp;&amp;</code> が付くと一致しない。</li>
       <li>計画の実行は、設定済み vault の計画ファイルを指すものだけ。</li>
       <li>設定済み vault の計画ファイルの読み・書き・編集。手順書（片づけの判断手順）の読み取り。</li>
       <li>見張りの起動（変化の見張りのコマンドだけ）。</li>

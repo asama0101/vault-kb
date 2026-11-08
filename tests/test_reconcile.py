@@ -1268,3 +1268,31 @@ def test_applyが計画の形の誤りで拒むときは計画ファイルを消
         apply(vault, data_dir, {}, NOW)
 
     assert plan_file.exists()
+
+
+def test_prepareは項目を返しても_ロックを残さない(vault, data_dir):
+    make_txt(vault.root / "00_inbox" / "x.txt", TEXT)
+    assert prepare(vault, data_dir, NOW)["items"]
+    assert not (data_dir / "reconcile.lock").exists()
+
+
+def test_applyは計画にないshaのstagingを消さない(vault, data_dir):
+    make_txt(vault.root / "00_inbox" / "a.txt", TEXT)
+    make_txt(vault.root / "00_inbox" / "b.txt", TEXT + "別の中身")
+    items = prepare(vault, data_dir, NOW)["items"]
+    assert len(items) == 2
+    planned, other = items
+    apply(vault, data_dir, {"items": [plan_item(planned["source"])]}, NOW)
+    assert not Path(planned["text"]).exists()
+    assert Path(other["text"]).exists()
+
+
+def test_applyは同じ中身の2資料を同じstagingのまま両方filedにして後で消す(vault, data_dir):
+    make_txt(vault.root / "00_inbox" / "a.txt", TEXT)
+    make_txt(vault.root / "00_inbox" / "b.txt", TEXT)
+    items = prepare(vault, data_dir, NOW)["items"]
+    assert items[0]["text"] == items[1]["text"]
+    plan = {"items": [plan_item(i["source"]) for i in items]}
+    result = apply(vault, data_dir, plan, NOW)
+    assert [r["status"] for r in result["results"]] == ["filed", "filed"]
+    assert list((data_dir / "staging").iterdir()) == []

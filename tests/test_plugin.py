@@ -226,6 +226,13 @@ def test_reconcileの手順は別の実行に計画を使われたapplyの失敗
     assert "次の `prepare` が拾う" in text
 
 
+def test_reconcileの手順はconflictだけが残るときmoreでも繰り返さず報告する():
+    text = REFERENCES.read_text(encoding="utf-8")
+
+    assert "すべて `conflict`" in text
+    assert "同名のファイルが `00_inbox` に N 件残り" in text
+
+
 @pytest.mark.parametrize("skill", ["watch", "sweep", "ask", "unwatch", "init"])
 def test_スキルのallowed_toolsにreleaseがない(skill):
     tools = frontmatter(PLUGIN / f"skills/{skill}/SKILL.md")["allowed-tools"]
