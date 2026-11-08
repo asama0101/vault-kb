@@ -34,7 +34,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent
 REQUIREMENTS = ROOT / "requirements.txt"
 RECONCILE = ROOT / "references" / "reconcile.md"
-MIN_PYTHON = (3, 10)
+# requirements.txt の固定版が入る Python の範囲（numpy 2.5.4 は >=3.12、markitdown 0.1.9 は <3.15）
+MIN_PYTHON = (3, 12)
+MAX_PYTHON = (3, 15)  # この版は含まない
 APPROX_SIZE = "約 300 MB"
 MIN_FREE_MB = 500
 PYPI_URL = "https://pypi.org/simple/"
@@ -101,7 +103,7 @@ def _runtime(data: Path) -> tuple[str | None, str | None, str | None]:
     venv_problem = _venv_problem(data)
     if venv_problem is None:
         return "venv", str(_venv_python(data)), None
-    if sys.version_info >= MIN_PYTHON and _packages_problem() is None:
+    if _python_problem(need_venv=False) is None and _packages_problem() is None:
         return "system", sys.executable, None
     return None, None, venv_problem
 
@@ -117,9 +119,10 @@ def _guide(data: Path, problem: str) -> str:
 
 
 def _python_problem(need_venv: bool = True) -> str | None:
-    if sys.version_info < MIN_PYTHON:
-        need = ".".join(map(str, MIN_PYTHON))
-        return f"Python {need} 以上が必要です（現在 {sys.version.split()[0]}）"
+    if not MIN_PYTHON <= tuple(sys.version_info)[:2] < MAX_PYTHON:
+        low = ".".join(map(str, MIN_PYTHON))
+        high = f"{MAX_PYTHON[0]}.{MAX_PYTHON[1] - 1}"
+        return f"Python {low}〜{high} が必要です（現在 {sys.version.split()[0]}）"
     for module in ("venv", "ensurepip") if need_venv else ():
         if importlib.util.find_spec(module) is None:
             return f"Python の {module} モジュールが使えません"
@@ -230,9 +233,7 @@ def _doctor(data: Path) -> int:
         python_remedy.append(f"  {run_py} doctor")
     runtime_name = "専用環境"
     if runtime_problem:
-        system_problem = (
-            "Python 3.10 以上が必要です" if sys.version_info < MIN_PYTHON else _packages_problem()
-        )
+        system_problem = _python_problem(need_venv=False) or _packages_problem()
         runtime_problem = f"{runtime_problem}（システムの Python: {system_problem}）"
     else:
         runtime_name += "（venv）" if kind == "venv" else "（システムの Python）"
@@ -246,7 +247,7 @@ def _doctor(data: Path) -> int:
             "Python",
             _python_problem(need_venv=kind != "system"),
             [
-                "Python 3.10 以上を入れる（python.org、または winget install Python.Python.3.12）",
+                "Python 3.12〜3.14 を入れる（python.org か winget install Python.Python.3.13）",
                 "入れたあと、新しいターミナルで python --version を確かめる。",
             ],
         ),

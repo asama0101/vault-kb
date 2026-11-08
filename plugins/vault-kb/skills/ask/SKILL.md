@@ -2,7 +2,7 @@
 name: ask
 description: Obsidian vault の vault-kb にある資料から、資料を探して取り出す、または資料の内容について出典付きで答える。「〇〇の資料を探して」「見積について資料に何と書いてある？」「△△の資料をリストアップして」と頼まれたときに使う。資料の片づけには使わない。未処理の資料があれば、答える前に片づける（見張りが動いていれば済んでいる）。資料の作成（下書き・スライド化）には使わない。
 allowed-tools: Read(//**/vault-kb/**) Grep(//**/vault-kb/**) Glob(//**/vault-kb/**) Bash(python "${CLAUDE_PLUGIN_ROOT}/run.py" --data "${CLAUDE_PLUGIN_DATA}" status) Bash(python "${CLAUDE_PLUGIN_ROOT}/run.py" --data "${CLAUDE_PLUGIN_DATA}" prepare) Bash(python "${CLAUDE_PLUGIN_ROOT}/run.py" --data "${CLAUDE_PLUGIN_DATA}" apply *) Bash(python "${CLAUDE_PLUGIN_ROOT}/run.py" --data "${CLAUDE_PLUGIN_DATA}" release) Read(//**/references/reconcile.md) Edit(//**/vault-kb/.vault-kb-plan.json)
-compatibility: Windows 専用。Python 3.10 以上。
+compatibility: Windows 専用。Python 3.12〜3.14。
 ---
 
 # 資料の検索と QA

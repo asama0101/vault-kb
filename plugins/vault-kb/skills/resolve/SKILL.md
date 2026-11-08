@@ -3,7 +3,7 @@ name: resolve
 description: 同名で中身が違うため保留している資料（同名の確認待ち）を、1 件ずつ、上書きするか、後から来た資料を削除するか、保留のままにするかを、利用者に選んでもらって解決する。利用者が /vault-kb:resolve と打ったときだけ使い、それ以外の場面では呼ばない。資料の片づけには watch、検索には ask を使う。
 disable-model-invocation: true
 allowed-tools: Bash(python "${CLAUDE_PLUGIN_ROOT}/run.py" --data "${CLAUDE_PLUGIN_DATA}" conflicts) Bash(python "${CLAUDE_PLUGIN_ROOT}/run.py" --data "${CLAUDE_PLUGIN_DATA}" prepare) Bash(python "${CLAUDE_PLUGIN_ROOT}/run.py" --data "${CLAUDE_PLUGIN_DATA}" apply *) Bash(python "${CLAUDE_PLUGIN_ROOT}/run.py" --data "${CLAUDE_PLUGIN_DATA}" release) Read(//**/vault-kb/.vault-kb-plan.json) Read(//**/references/reconcile.md) Edit(//**/vault-kb/.vault-kb-plan.json)
-compatibility: Windows 専用。Python 3.10 以上。
+compatibility: Windows 専用。Python 3.12〜3.14。
 ---
 
 # 同名の確認待ちの解決

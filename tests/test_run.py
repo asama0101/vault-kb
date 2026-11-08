@@ -609,3 +609,36 @@ def test_pipが成功しても読み込めなければsetupは失敗を報告す
 
     assert code == 1
     assert "使えません" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("version", [(3, 10, 0), (3, 11, 9), (3, 15, 0)])
+def test_固定版のライブラリが入らない版のPythonは使える範囲を示して問題にする(version, monkeypatch):
+    module = load_run_module()
+    fake_sys = SimpleNamespace(
+        version_info=version, version=".".join(map(str, version)) + " (test)"
+    )
+    monkeypatch.setattr(module, "sys", fake_sys)
+
+    problem = module._python_problem(need_venv=False)
+
+    assert "3.12" in problem
+    assert "3.14" in problem
+
+
+@pytest.mark.parametrize("version", [(3, 12, 0), (3, 13, 5), (3, 14, 3)])
+def test_固定版のライブラリが入る版のPythonは問題にしない(version, monkeypatch):
+    module = load_run_module()
+    fake_sys = SimpleNamespace(
+        version_info=version, version=".".join(map(str, version)) + " (test)"
+    )
+    monkeypatch.setattr(module, "sys", fake_sys)
+
+    assert module._python_problem(need_venv=False) is None
+
+
+def test_requirementsが要求するPythonの範囲と_run_pyの範囲が一致している():
+    # PyPI で確かめた値: numpy 2.5.4 は >=3.12、markitdown 0.1.9 は <3.15
+    module = load_run_module()
+
+    assert module.MIN_PYTHON == (3, 12)
+    assert module.MAX_PYTHON == (3, 15)
