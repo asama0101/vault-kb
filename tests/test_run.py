@@ -25,20 +25,22 @@ def run(
     env_home=None,
     cwd=None,
     utf8_mode=True,
-    python=BASE_PYTHON,
+    python=None,
     env_extra=None,
     flags=None,
     offline=True,
 ):
-    """run.py を実行する。既定は、パッケージの入っていない Python（システムが空の状態）。
+    """run.py を実行する。python を省くと、ライブラリの入っていない Python（システムが空の状態）。
 
-    flags の既定は、ベースの Python なら -S（site を読まない。グローバルに入っているライブラリも
-    見えない空の状態）、それ以外なら -s（ユーザー領域のライブラリを見ない）。
+    flags の既定は、python を省いたときは -S（site を読まない。グローバルに入っている
+    ライブラリも見えない）、python を渡したときは -s（ユーザー領域のライブラリを見ない）。
     offline の既定は、届かないプロキシを指定して、実ネットワークに出ないようにする
     （実インストールを行う slow テストだけ False にする）。
     """
-    if flags is None:
-        flags = ("-S",) if python == BASE_PYTHON else ("-s",)
+    if python is None:
+        python, flags = BASE_PYTHON, ("-S",) if flags is None else flags
+    elif flags is None:
+        flags = ("-s",)
     env = {k: v for k, v in os.environ.items() if k not in ("VAULT_KB_HOME", "PYTHONUTF8")}
     if utf8_mode:
         env["PYTHONUTF8"] = "1"
