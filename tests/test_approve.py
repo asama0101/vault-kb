@@ -449,3 +449,35 @@ def test_シェル展開と親ディレクトリ参照を含むコマンドは�
 
     assert result.returncode == 0
     assert result.stdout == ""
+
+
+@pytest.mark.parametrize("tool", ["Bash", "Monitor"])
+@pytest.mark.parametrize("sep", ["\n", "\r", "\r\n"], ids=["LF", "CR", "CRLF"])
+@pytest.mark.parametrize(
+    "template",
+    [
+        '{head} wiki-apply{sep}"{wiki}"',
+        '{head} wiki-check{sep}"{wiki}"',
+        '{head} apply{sep}"{plan}"',
+        '{head} watch{sep}"{plan}"',
+        'python{sep}"{run}" --data "{data}" wiki-apply "{wiki}"',
+        'python "{run}" --data{sep}"{data}" apply "{plan}"',
+        '{head} wiki-apply "{wiki}"{sep}',
+    ],
+    ids=["wiki-apply", "wiki-check", "apply", "watch", "pythonの後", "--dataの後", "末尾"],
+)
+def test_引用外の改行を含むコマンドは通さない(env, tool, sep, template):
+    data, root, head = env
+    command = template.format(
+        head=head,
+        sep=sep,
+        run=RUN.as_posix(),
+        data=data.as_posix(),
+        plan=plan_of(root).as_posix(),
+        wiki=wiki_plan_of(root).as_posix(),
+    )
+
+    result = approve(data, tool, {"command": command})
+
+    assert result.returncode == 0
+    assert result.stdout == ""

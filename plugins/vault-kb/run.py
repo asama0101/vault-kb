@@ -358,15 +358,16 @@ def _is_own_command(
     wiki_plan: Path | None = None,
 ) -> bool:
     """`python "<ROOT>/run.py" --data "<DATA>" <サブ> [計画]` の 1 コマンドだけに完全一致するか。"""
+    # シェルが展開する文字と改行は不可。shlex は引用外の改行を空白に畳むので、生の文字列で見る
+    if any(c in command for c in "$`\n\r"):
+        return False
     try:
         tokens = shlex.split(command)
     except ValueError:
         return False
     if len(tokens) < 5 or tokens[0] != "python" or tokens[2] != "--data":
         return False
-    # シェルが展開する文字と改行は不可。パスの .. は resolve が文字列のまま畳むので不可
-    if any(c in token for token in tokens for c in "$`\n\r"):
-        return False
+    # パスの .. は resolve が文字列のまま畳むので不可
     if any(".." in Path(token).parts for token in (tokens[1], tokens[3], *tokens[5:])):
         return False
     if not _same(tokens[1], ROOT / "run.py") or not _same(tokens[3], data):
