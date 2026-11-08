@@ -3,14 +3,20 @@
 from __future__ import annotations
 
 import hashlib
+import re
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
 from vault_kb import bundle
-from vault_kb.vault import Vault, check_folder_name
+from vault_kb.lock import Busy, acquire, release
+from vault_kb.vault import Vault, atomic_write, check_folder_name
 
 READ_LIMIT = 30  # 1 回に読む資料の数
 FULL_READ_LIMIT = 100  # full のときの上限
+SLUG_LIMIT = 40  # 保存した回答のファイル名の題の字数
+_STRIKE = re.compile(r"~~.+?~~")
+_SLUG_DROP = re.compile(r'[\\/:*?"<>|.\s\x00-\x1f]')  # 区切り文字・使えない文字・空白・ドット
 
 
 def digest(entries: list[dict[str, Any]]) -> str:
@@ -185,10 +191,35 @@ def _check_page(vault: Vault, request: dict[str, Any], kind: str) -> dict[str, A
     } | extra
 
 
+def _strings(request: dict[str, Any], key: str, default: Any = None) -> list[str]:
+    value = request.get(key, default)
+    if not isinstance(value, list) or not all(isinstance(v, str) for v in value):
+        raise ValueError(f"{key} は文字列の一覧で指定してください")
+    return value
+
+
+def _md_name(request: dict[str, Any], key: str) -> str:
+    """.wiki/ の下で読み書きするファイル名。区切り・..・ドライブ・使えない文字・.md 以外は不可。"""
+    name = _text(request, key)
+    try:
+        check_folder_name(name)
+        bad = not name.endswith(".md") or ".." in name
+    except ValueError:
+        bad = True
+    if bad:
+        raise ValueError(f"{key} が .wiki/queries/ の外を指しています: {name!r}")
+    return name
+
+
+def _inside(vault: Vault, path: Path) -> Path:
+    """組み立てたパスが .wiki/ の中にあることを確かめる。"""
+    if not path.resolve().is_relative_to(vault.wiki_dir.resolve()):
+        raise ValueError(f".wiki/ の外には書けません: {path}")
+    return path
+
+
 def _check_query(vault: Vault, request: dict[str, Any]) -> dict[str, Any]:
-    file = _text(request, "file")
-    if not file.endswith(".md") or any(x in file for x in ("/", "\\")) or ".." in file:
-        raise ValueError(f"file が .wiki/queries/ の外を指しています: {file!r}")
+    file = _md_name(request, "file")
     page = read_page(vault.wiki_dir / "queries" / file)
     meta = page[0] if page else {}
     evidence = meta.get("evidence")
@@ -227,3 +258,166 @@ def check(vault: Vault, request: dict[str, Any]) -> dict[str, Any]:
     if kind == "query":
         return _check_query(vault, request)
     raise ValueError(f"kind は project・theme・query のどれかにしてください: {kind!r}")
+
+
+def _replace_moved(text: str, moves: dict[str, str]) -> str:
+    """移動した資料の旧 resource を新 resource に置き換える。
+
+    長い順の 1 回の置換なので、連鎖（a→b、b→a）と接頭辞（見積.xlsx と 見積.xlsx.bak）を壊さない。
+    """
+    if not moves:
+        return text
+    olds = "|".join(re.escape(old) for old in sorted(moves, key=len, reverse=True))
+    pattern = rf"(?<![\w./-])(?:{olds})(?![\w/-]|\.\w)"
+    return re.sub(pattern, lambda m: moves[m[0]], text)
+
+
+Write = list[tuple[Path, str]]
+
+
+def _plan_page(vault: Vault, op: dict[str, Any], kind: str, now: datetime) -> tuple[Write, str]:
+    """統合ページ・テーマページの書き込み（退避を含む）と、log.md の行（移動だけなら空）。"""
+    name = _text(op, "name")
+    check_folder_name(name)
+    expected = _text(op, "expected_digest")
+    body = op.get("body")
+    if body is not None and not isinstance(body, str):
+        raise ValueError("body は文字列で指定してください")
+    if kind == "project":
+        if vault.project_dir(name) is None:
+            raise ValueError(f"案件がありません: {name!r}")
+        entries = project_entries(vault, name)
+        if len(entries) < 2:
+            raise ValueError(f"ノートが 2 件未満の案件には統合ページを作りません: {name!r}")
+    else:
+        selected = _strings(op, "selected")
+        existing = {e["resource"]: e for e in _entries(vault)}
+        unknown = [r for r in selected if r not in existing]
+        if unknown or not selected:
+            raise ValueError(f"selected に存在しない資料があります（または空）: {unknown}")
+        entries = [existing[r] for r in dict.fromkeys(selected)]
+    current = digest(entries)
+    if expected != current:
+        raise ValueError("確認の後に資料の指紋が変わりました。wiki-check からやり直してください")
+    path = _inside(vault, vault.wiki_dir / f"{kind}s" / f"{name}.md")
+    page = read_page(path)
+    meta, old_body = page if page else ({}, "")
+    old_sources = meta["sources"] if _valid_sources(meta.get("sources")) else []
+    old_unread = meta.get("unread")
+    old_unread = old_unread if isinstance(old_unread, list) else []
+    # 前回の未読は sources にないので、比べる相手から除く（除かないと全部「追加」になる）
+    diff = classify(old_sources, [e for e in entries if e["resource"] not in old_unread])
+    moves = {m["from"]: m["to"] for m in diff["moved"]}
+    if body is None:
+        if page is None:
+            raise ValueError("ページがないので body を省略できません")
+        if diff["added"] or diff["changed"] or diff["removed"]:
+            raise ValueError("移動のほかに差分があるので body が要ります")
+        body, unread = old_body, old_unread
+    else:
+        unread = _strings(op, "unread", [])
+    names = {e["resource"] for e in entries}
+    if not set(unread) <= names:
+        raise ValueError(f"unread に対象の資料でないものがあります: {sorted(set(unread) - names)}")
+    body = _replace_moved(body, moves)
+    if len(_STRIKE.findall(body)) < len(_STRIKE.findall(old_body)):
+        raise ValueError("取り消し線が減っています。古い記述は消さず、取り消し線にしてください")
+    new_meta = {
+        "type": "synthesis",
+        kind: name,
+        "timestamp": now.isoformat(),
+        "sources_digest": current,
+        "sources": [
+            {"resource": e["resource"], "sha256": e["sha256"]}
+            for e in sorted_by_resource(entries)
+            if e["resource"] not in unread
+        ],
+        "unread": unread,
+    }
+    writes: Write = []
+    if page is not None:  # 1 世代だけ退避する
+        backup = _inside(vault, vault.wiki_dir / ".bak" / kind / f"{name}.md")
+        writes.append((backup, path.read_bytes().decode("utf-8", errors="replace")))
+    writes.append((path, bundle.note_text(new_meta, body)))
+    if "body" not in op:
+        return writes, ""
+    if kind == "project":
+        return writes, f"**Synthesized** {name}（ノート {len(entries)} 件）"
+    found = [bundle.location(vault, vault.path(e["resource"])) for e in entries]
+    projects = len({loc[0] for loc in found if loc})
+    return writes, f"**Synthesized** テーマ「{name}」（ノート {len(entries)} 件、{projects} 案件）"
+
+
+def _plan_query(
+    vault: Vault, op: dict[str, Any], now: datetime, planned: dict[Path, str]
+) -> tuple[Path, str]:
+    """保存する回答のパスと全文。sha256 と scope_digest は今のノートから作る。"""
+    question = _text(op, "question")
+    answer = _text(op, "answer")
+    evidence = _strings(op, "evidence")
+    scope = _strings(op, "scope")
+    slug = _text(op, "slug")
+    existing = {e["resource"]: e["sha256"] for e in _entries(vault)}
+    missing = [r for r in evidence if r not in existing]
+    if missing:
+        raise ValueError(f"evidence に存在しない資料があります: {missing}")
+    folder = vault.wiki_dir / "queries"
+    if "overwrite" in op:
+        file = _md_name(op, "overwrite")
+        if not (folder / file).is_file():
+            raise ValueError(f"overwrite のファイルがありません: {file!r}")
+    else:
+        stem = f"{now:%Y%m%d-%H%M%S}-{_SLUG_DROP.sub('', slug)[:SLUG_LIMIT] or 'answer'}"
+        file, number = f"{stem}.md", 2
+        while (folder / file).exists() or folder / file in planned:
+            file, number = f"{stem}-{number}.md", number + 1
+    meta = {
+        "type": "query",
+        "question": question,
+        "timestamp": now.isoformat(),
+        "evidence": [{"resource": r, "sha256": existing[r]} for r in dict.fromkeys(evidence)],
+        "scope": scope,
+        "scope_digest": scope_digest(vault, scope),
+    }
+    return _inside(vault, folder / file), bundle.note_text(meta, answer)
+
+
+def apply(vault: Vault, data_dir: Path, request: dict[str, Any], now: datetime) -> dict[str, Any]:
+    """.wiki/ に書く。片づけと同じロックの下で、全部の op を検証してから書く。"""
+    try:
+        acquire(data_dir, now)
+    except Busy:
+        return {"busy": True}
+    try:
+        ops = request.get("ops")
+        if not isinstance(ops, list) or not all(isinstance(op, dict) for op in ops):
+            raise ValueError("ops は op の一覧で指定してください")
+        writes: dict[Path, str] = {}
+        written: list[Path] = []
+        logs: list[str] = []
+        for op in ops:
+            if op.get("op") == "page":
+                kind = op.get("kind")
+                if kind not in ("project", "theme"):
+                    raise ValueError(f"kind は project か theme にしてください: {kind!r}")
+                planned, line = _plan_page(vault, op, kind, now)
+                logs += [line] if line else []
+            elif op.get("op") == "query":
+                planned = [_plan_query(vault, op, now, writes)]
+            else:
+                raise ValueError(f"op は page か query にしてください: {op.get('op')!r}")
+            for path, text in planned:
+                if path in writes:
+                    raise ValueError(f"同じファイルに 2 回書こうとしています: {vault.rel(path)}")
+                writes[path] = text
+            written.append(planned[-1][0])
+        # ここまでで検証は終わり。ここから書く
+        if writes:
+            vault.hide_wiki_dir()
+        for path, text in writes.items():
+            atomic_write(path, text)
+        if logs:
+            bundle.append_log(vault, logs, now)
+        return {"written": [vault.rel(path) for path in written], "logged": len(logs)}
+    finally:
+        release(data_dir)
