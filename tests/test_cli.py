@@ -4,6 +4,7 @@ import queue
 import subprocess
 import sys
 import threading
+from datetime import datetime
 from pathlib import Path
 
 import pytest
@@ -179,7 +180,9 @@ def test_prepareは資料がなければ空の項目を返してロックを残�
 def test_prepareはロック中にbusyを返して終了コード0(configured):
     root, data = configured
     make_txt(root / "00_inbox" / "memo.txt", TEXT)
-    assert kb(data, "prepare").returncode == 0  # 項目があるのでロックが残る
+    data.joinpath("reconcile.lock").write_text(  # 別の実行が動いている
+        datetime.now().astimezone().isoformat(), encoding="utf-8"
+    )
 
     second = kb(data, "prepare")
 
@@ -187,39 +190,30 @@ def test_prepareはロック中にbusyを返して終了コード0(configured):
     assert json.loads(second.stdout) == {"busy": True}
 
 
-def test_releaseはロックを解く(configured):
+def test_releaseはサブコマンドにない(configured):
+    _, data = configured
+
+    result = kb(data, "release")
+
+    assert result.returncode == 2
+    assert "invalid choice" in result.stderr
+
+
+def test_applyは別の実行が動いていればbusyを返す(configured):
     root, data = configured
     make_txt(root / "00_inbox" / "memo.txt", TEXT)
-    kb(data, "prepare")
-    assert (data / "reconcile.lock").exists()
+    data.joinpath("reconcile.lock").write_text(
+        datetime.now().astimezone().isoformat(), encoding="utf-8"
+    )
+    plan_path = root / ".vault-kb-plan.json"
+    plan_path.write_text(json.dumps({"items": []}), encoding="utf-8")
 
-    result = kb(data, "release")
+    result = kb(data, "apply", str(plan_path))
 
-    assert json.loads(result.stdout) == {"released": True}
-    assert not (data / "reconcile.lock").exists()
-
-
-def test_releaseは計画の持ち主の印が違えば_他の実行が引き継いだロックを解かない(configured):
-    root, data = configured
-    data.joinpath("reconcile.lock").write_text("2026-11-08T12:16:00+00:00", encoding="utf-8")  # B
-    plan = root / ".vault-kb-plan.json"
-    plan.write_text(json.dumps({"lock_token": "2026-11-08T12:00:00+00:00"}), encoding="utf-8")  # A
-
-    result = kb(data, "release")
-
-    assert json.loads(result.stdout) == {"released": True}
-    assert (data / "reconcile.lock").exists()
-
-
-def test_releaseは計画の持ち主の印が同じなら解く(configured):
-    root, data = configured
-    data.joinpath("reconcile.lock").write_text("2026-11-08T12:00:00+00:00", encoding="utf-8")
-    plan = root / ".vault-kb-plan.json"
-    plan.write_text(json.dumps({"lock_token": "2026-11-08T12:00:00+00:00"}), encoding="utf-8")
-
-    kb(data, "release")
-
-    assert not (data / "reconcile.lock").exists()
+    assert result.returncode == 0, result.stderr
+    assert json.loads(result.stdout) == {"busy": True}
+    assert plan_path.exists()
+    assert (root / "00_inbox" / "memo.txt").exists()
 
 
 def test_reindexは索引を作り直す(configured):

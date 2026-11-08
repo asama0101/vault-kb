@@ -16,7 +16,6 @@ from typing import Any
 from . import bundle, lock, reconcile, watch
 from .vault import (
     ConfigError,
-    Vault,
     atomic_write,
     init_vault,
     install_obsidian_assets,
@@ -40,7 +39,6 @@ def _parser() -> argparse.ArgumentParser:
     sub.add_parser("prepare", help="追従・削除を反映し、判断が要る資料を変換して返す")
     apply = sub.add_parser("apply", help="計画（JSON）どおりに資料を置いてノートを書く")
     apply.add_argument("plan")
-    sub.add_parser("release", help="片づけのロックを解く")
     sub.add_parser("reindex", help="index.md を作り直す")
     sub.add_parser("watch", help="vault の変化を 1 行ずつ出す（Ctrl+C か unwatch で終わる）")
     sub.add_parser("unwatch", help="見張りに停止の印を書き、確認事項を返す")
@@ -70,19 +68,6 @@ def _configure(data_dir: Path, vault_arg: str) -> dict[str, Any]:
     return {"vault": str(vault.root)}
 
 
-def _plan_lock_token(vault: Vault) -> str | None:
-    """計画ファイルの lock_token（apply の失敗後の release が、自分のロックだけを解くため）。
-
-    計画がない・読めない・印がないときは None（従来どおり、無条件に解く）。
-    """
-    try:
-        token = json.loads((vault.root / reconcile.PLAN_NAME).read_text(encoding="utf-8"))
-        token = token.get("lock_token")
-    except (OSError, ValueError, AttributeError):
-        return None
-    return token if isinstance(token, str) else None
-
-
 def _run(args: argparse.Namespace, data_dir: Path) -> dict[str, Any] | list[Any] | None:
     """サブコマンドを実行し、JSON にする結果を返す（watch は None）。"""
     if args.command == "configure":
@@ -100,11 +85,10 @@ def _run(args: argparse.Namespace, data_dir: Path) -> dict[str, Any] | list[Any]
         plan = json.loads(Path(args.plan).read_text(encoding="utf-8"))
         try:
             return reconcile.apply(vault, data_dir, plan, now)
+        except lock.Busy:
+            return {"busy": True}
         except OSError as error:  # 後処理の失敗。処理した資料は log.md に残っている
             raise _ApplyFailed(str(error)) from error
-    if args.command == "release":
-        lock.release(data_dir, _plan_lock_token(vault))
-        return {"released": True}
     if args.command == "reindex":
         bundle.write_indexes(vault)
         return {"reindexed": True}

@@ -340,7 +340,6 @@ def test_mdの原本を編集するとchanged_消すとノートも消える(vau
     original.write_text(TEXT + "追記した本文です。", encoding="utf-8")
     (item,) = prepare(vault, data_dir, NOW + timedelta(minutes=1))["items"]
     assert (item["kind"], item["name"]) == ("changed", "memo.md")
-    release(data_dir)
     original.unlink()
     result = prepare(vault, data_dir, NOW + timedelta(minutes=2))
     expected = "**Removed** .notes/20_projects/A社/01_見積/memo.md.md（原本が見つからない）"
@@ -352,14 +351,6 @@ def test_prepareは項目がなければ索引を作り直してロックを解�
     prepare(vault, data_dir, NOW)
     assert (data_dir / "reconcile.lock").exists() is False
     assert (vault.root / "index.md").exists()
-
-
-def test_prepareは項目があればロックを残す(vault, data_dir):
-    make_txt(vault.root / "00_inbox" / "x.txt", TEXT)
-    prepare(vault, data_dir, NOW)
-    assert (data_dir / "reconcile.lock").exists()
-    with pytest.raises(Busy):
-        prepare(vault, data_dir, NOW + timedelta(minutes=1))
 
 
 def test_prepareのwarningsは予約名の案件フォルダがなければ空(vault, data_dir):
@@ -604,7 +595,7 @@ def test_applyはinboxの資料を案件区分へ名前のまま移し隣にノ�
     assert [p.name for p in folder.iterdir()] == ["x.txt"]  # 区分フォルダには原本だけ
     assert not (vault.root / "00_inbox" / "x.txt").exists()
     assert not (data_dir / "reconcile.lock").exists()
-    assert not (data_dir / "staging").exists()
+    assert list((data_dir / "staging").iterdir()) == []
     src, dst = (
         vault.root / "00_inbox" / "x.txt",
         vault.root / "20_projects" / "A社" / "01_見積" / "x.txt",
@@ -695,7 +686,6 @@ def test_旧版の保留の記録が残っていても無視され_inboxの資�
     for _ in range(2):
         result = prepare(vault, data_dir, NOW)
         assert [item["source"] for item in result["items"]] == ["00_inbox/x.txt"]
-        release(data_dir)
 
 
 def test_applyはunregisteredの原本を動かさずノートだけ書く(vault, data_dir):
@@ -1091,7 +1081,7 @@ def test_索引の書き込みに失敗してもログとロック解除は行�
         run_apply(vault, data_dir, {})
     assert "**Filed** x.txt" in (vault.root / "log.md").read_text(encoding="utf-8")
     assert not (data_dir / "reconcile.lock").exists()
-    assert not (data_dir / "staging").exists()
+    assert list((data_dir / "staging").iterdir()) == []
 
 
 def test_prepareとapplyの間に原本が変わればerrorで原本は残りノートは書かない(vault, data_dir):
@@ -1158,59 +1148,79 @@ def test_移動先の案件か区分がリンクならerrorで原本は動かな
     assert list(outside.iterdir()) == []
 
 
-def test_releaseは持ち主の印が違えば_他の実行が取り直したロックを解かない(data_dir):
-    acquire(data_dir, NOW)  # 実行 A
-    later = NOW + timedelta(minutes=16)
-    acquire(data_dir, later)  # 実行 B が、失効した A のロックを引き継ぐ
-
-    release(data_dir, NOW.isoformat())  # A が終わる
-
-    assert (data_dir / "reconcile.lock").read_text(encoding="utf-8") == later.isoformat()
-    release(data_dir, later.isoformat())
+def test_prepareは項目があってもロックを残さない(vault, data_dir):
+    make_txt(vault.root / "00_inbox" / "x.txt", TEXT)
+    result = prepare(vault, data_dir, NOW)
+    assert result["items"]
+    assert "lock_token" not in result
     assert not (data_dir / "reconcile.lock").exists()
 
 
-def test_applyは別の実行が引き継いだロックとstagingと計画ファイルに触れない(vault, data_dir):
+def test_applyは別のprepareとロックが重なればBusy_計画もstagingも資料も動かさない(vault, data_dir):
     make_txt(vault.root / "00_inbox" / "x.txt", TEXT)
-    first = prepare(vault, data_dir, NOW)  # 実行 A
-    later = NOW + timedelta(minutes=16)
-    second = prepare(vault, data_dir, later)  # 実行 B が、失効したロックを引き継ぐ
-    assert second["items"]
-    assert first["lock_token"] != second["lock_token"]
-    other_plan = vault.root / PLAN_NAME
-    other_plan.write_text("B の計画", encoding="utf-8")
-    plan = {
-        "lock_token": first["lock_token"],
-        "items": [plan_item(i["source"], kind=i["kind"]) for i in first["items"]],
-    }
+    (item,) = prepare(vault, data_dir, NOW)["items"]
+    plan_file = vault.root / PLAN_NAME
+    plan_file.write_text("計画", encoding="utf-8")
+    acquire(data_dir, NOW)  # 別の実行が動いている
 
-    result = apply(vault, data_dir, plan, later + timedelta(minutes=1))  # A の apply
+    with pytest.raises(Busy):
+        apply(vault, data_dir, {"items": [plan_item(item["source"])]}, NOW)
 
-    assert [r["status"] for r in result["results"]] == ["filed"]
-    assert (data_dir / "reconcile.lock").read_text(encoding="utf-8") == later.isoformat()
-    assert (data_dir / "staging").is_dir()
-    assert other_plan.read_text(encoding="utf-8") == "B の計画"
+    assert (vault.root / "00_inbox" / "x.txt").exists()
+    assert Path(item["text"]).exists()
+    assert plan_file.read_text(encoding="utf-8") == "計画"
+    assert (data_dir / "reconcile.lock").read_text(encoding="utf-8") == NOW.isoformat()
 
 
-def test_applyは自分のロックの印なら_ロックとstagingと計画ファイルを片づける(vault, data_dir):
+def test_applyは片づけ後にその項目のstagingだけを消す(vault, data_dir):
     make_txt(vault.root / "00_inbox" / "x.txt", TEXT)
-    first = prepare(vault, data_dir, NOW)
-    (vault.root / PLAN_NAME).write_text("計画", encoding="utf-8")
-    plan = {
-        "lock_token": first["lock_token"],
-        "items": [plan_item(i["source"], kind=i["kind"]) for i in first["items"]],
-    }
+    make_txt(vault.root / "00_inbox" / "y.txt", TEXT + "別の本文")
+    items = {i["source"]: i for i in prepare(vault, data_dir, NOW)["items"]}
 
+    (result,) = apply(vault, data_dir, {"items": [plan_item("00_inbox/x.txt")]}, NOW)["results"]
+
+    assert result["status"] == "filed"
+    assert not Path(items["00_inbox/x.txt"]["text"]).exists()
+    assert Path(items["00_inbox/y.txt"]["text"]).exists()
+
+
+def test_中身が同じ別名の資料2つは同じstagingを共有しても両方片づく(vault, data_dir):
+    make_txt(vault.root / "00_inbox" / "a.txt", TEXT)
+    make_txt(vault.root / "00_inbox" / "b.txt", TEXT)
+
+    result = run_apply(vault, data_dir, {}, {})
+
+    assert [r["status"] for r in result["results"]] == ["filed", "filed"]
+    assert list((data_dir / "staging").iterdir()) == []
+
+
+def test_同じ計画を2回applyしても2回目は項目ごとのエラーで_二重に動かさずログも1回分(
+    vault, data_dir
+):
+    make_txt(vault.root / "00_inbox" / "x.txt", TEXT)
+    (item,) = prepare(vault, data_dir, NOW)["items"]
+    plan = {"items": [plan_item(item["source"])]}
     apply(vault, data_dir, plan, NOW)
 
+    (second,) = apply(vault, data_dir, plan, NOW)["results"]
+
+    assert second["status"] == "error"
+    assert "ありません" in second["message"]
+    log = (vault.root / "log.md").read_text(encoding="utf-8")
+    assert log.count("**Filed**") == 1
     assert not (data_dir / "reconcile.lock").exists()
-    assert not (data_dir / "staging").exists()
-    assert not (vault.root / PLAN_NAME).exists()
 
 
-def test_applyはlock_tokenが文字列でなければValueError(vault, data_dir):
-    with pytest.raises(ValueError, match="lock_token"):
-        apply(vault, data_dir, {"items": [], "lock_token": 1}, NOW)
+@pytest.mark.parametrize("token", ["2026-10-31T12:00:00+00:00", 1])
+def test_applyは旧版のlock_token付きの計画も受け付ける(vault, data_dir, token):
+    make_txt(vault.root / "00_inbox" / "x.txt", TEXT)
+    (item,) = prepare(vault, data_dir, NOW)["items"]
+
+    result = apply(
+        vault, data_dir, {"lock_token": token, "items": [plan_item(item["source"])]}, NOW
+    )
+
+    assert [r["status"] for r in result["results"]] == ["filed"]
 
 
 @pytest.mark.parametrize("root", ["20_projects", "80_archive"])

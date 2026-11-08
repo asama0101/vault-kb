@@ -2,14 +2,13 @@
 
 from __future__ import annotations
 
-import shutil
 import time
 from datetime import date, datetime
 from pathlib import Path, PurePosixPath
 from typing import Any
 
 from . import bundle, convert
-from .lock import acquire, owns, release, token_of
+from .lock import acquire, release
 from .vault import (
     ARCHIVE_NAME,
     DEFAULT_CATEGORY,
@@ -362,13 +361,10 @@ def _prepare(vault: Vault, data_dir: Path, now: datetime) -> dict[str, Any]:
     finally:
         if done:
             bundle.append_log(vault, done, now)
-    token = token_of(now)
     if not items:
         bundle.write_indexes(vault)
-        release(data_dir, token)
     return {
         "vault": str(vault.root),
-        "lock_token": token,  # 計画に書き写す（apply が、自分のロックだけを解くため）
         "items": items,
         "more": more,
         "context": _context(vault),
@@ -382,14 +378,13 @@ def _prepare(vault: Vault, data_dir: Path, now: datetime) -> dict[str, Any]:
 def prepare(vault: Vault, data_dir: Path, now: datetime) -> dict[str, Any]:
     """ロックを取り、追従・削除・記録の更新をして、判断が要る項目を変換して返す。
 
-    項目があるとロックを残す（apply が解く）。失敗したときは解く。
+    ロックは実行中だけ取り、戻る前に必ず解く（項目があっても残さない）。
     """
     acquire(data_dir, now)
     try:
         return _prepare(vault, data_dir, now)
-    except BaseException:
-        release(data_dir, token_of(now))
-        raise
+    finally:
+        release(data_dir)
 
 
 def _check_plan_item(item: Any) -> None:
@@ -549,8 +544,11 @@ def _source_path(vault: Vault, item: Item) -> Path:
 
 def _apply_item(
     vault: Vault, data_dir: Path, item: Item, clients: list[str], now: datetime
-) -> tuple[Item, str | None]:
-    """1 項目を実行する。(結果, ログの 1 行。保留は None)。OSError・ValueError は 1 件の失敗。"""
+) -> tuple[Item, str | None, str]:
+    """1 項目を実行する。(結果, ログの 1 行。保留は None, 原本の sha)。
+
+    OSError・ValueError は 1 件の失敗。
+    """
     source = _source_path(vault, item)
     sha = convert.sha256_of(source)
     original = source
@@ -567,20 +565,28 @@ def _apply_item(
                     f"**Discarded** {source.name}（{where} に同じ中身）"
                     f" — 元: {source} / 既存: {original}"
                 )
-                return {
+                return (
+                    {
+                        "source": item["source"],
+                        "status": "discarded",
+                        "note": None,
+                        "message": None,
+                        "original": str(original),
+                    },
+                    line,
+                    sha,
+                )
+            return (
+                {
                     "source": item["source"],
-                    "status": "discarded",
+                    "status": "conflict",
                     "note": None,
                     "message": None,
                     "original": str(original),
-                }, line
-            return {
-                "source": item["source"],
-                "status": "conflict",
-                "note": None,
-                "message": None,
-                "original": str(original),
-            }, None
+                },
+                None,
+                sha,
+            )
         if len(vault.rel(original)) > MAX_PATH_LEN:
             raise ValueError(f"パスが {MAX_PATH_LEN} 文字を超えます: {vault.rel(original)}")
         longest = max(len(str(original)), len(str(vault.note_path(original))))
@@ -614,74 +620,82 @@ def _apply_item(
             f"**Filed** {original.name} → {project}/{category}（{fields}）"
             f" — 元: {source} / 先: {original}"
         )
-    return {
-        "source": item["source"],
-        "status": status,
-        "note": vault.rel(note),
-        "message": None,
-        "original": str(original),
-    }, line
+    return (
+        {
+            "source": item["source"],
+            "status": status,
+            "note": vault.rel(note),
+            "message": None,
+            "original": str(original),
+        },
+        line,
+        sha,
+    )
 
 
 def apply(vault: Vault, data_dir: Path, plan: dict[str, Any], now: datetime) -> dict[str, Any]:
-    """計画どおりに資料を置いてノートを書き、索引・ログを直してロックと staging を片づける。
+    """計画どおりに資料を置いてノートを書き、索引・ログを直して staging と計画ファイルを片づける。
 
-    計画の形が不正なら ValueError（何も実行しない。ロックは残す）。1 件の失敗は error にして続ける。
-    計画の lock_token（prepare が返した値）が、いまのロックの持ち主の印と違うときは、別の実行が
-    ロックを引き継いでいる。その実行の作業を壊さないよう、ロック・staging・計画ファイルに触れない。
-    限界: lock_token は Claude が計画に書き写す。書き落とした計画は従来どおり無条件に片づける
-    （この保護が効かないだけで、以前より悪くはならない）。書き間違えると、片づけが残って
-    次の prepare が最長 15 分 busy になる。
+    計画の形が不正なら ValueError（何も実行せず、ロックも取らない）。別の実行が動いていれば
+    Busy（何も動かさない）。1 件の失敗は error にして続ける。ロックは実行中だけ取る。
+    旧版の計画の lock_token は無視する。
     """
     items = plan.get("items") if isinstance(plan, dict) else None
     if not isinstance(items, list):
         raise ValueError("計画に items（配列）がありません")
-    token = plan.get("lock_token")
-    if token is not None and not isinstance(token, str):
-        raise ValueError("lock_token は文字列にしてください")
     for item in items:
         _check_plan_item(item)
+    acquire(data_dir, now)
+    try:
+        return _apply(vault, data_dir, items, now)
+    finally:
+        release(data_dir)
+
+
+def _apply(vault: Vault, data_dir: Path, items: list[Item], now: datetime) -> dict[str, Any]:
     results: list[Item] = []
     done: list[str] = []
+    shas: set[str] = set()
     try:
         clients = bundle.clients(bundle.notes(vault))
         for item in items:
             try:
-                result, line = _apply_item(vault, data_dir, item, clients, now)
+                result, line, sha = _apply_item(vault, data_dir, item, clients, now)
             except (OSError, ValueError) as error:
                 failed = {"source": item["source"], "status": "error", "note": None}
                 results.append(failed | {"message": str(error), "original": None})
             else:
                 results.append(result)
+                shas.add(sha)
                 if line:
                     done.append(line)
     except BaseException:
-        _finish(vault, data_dir, done, now, token)  # 本体の例外を隠さない
+        _finish(vault, data_dir, done, now, shas)  # 本体の例外を隠さない
         raise
-    failure = _finish(vault, data_dir, done, now, token)
+    failure = _finish(vault, data_dir, done, now, shas)
     if failure:
         raise failure
     return {"results": results, "done": done}
 
 
 def _finish(
-    vault: Vault, data_dir: Path, done: list[str], now: datetime, token: str | None
+    vault: Vault, data_dir: Path, done: list[str], now: datetime, shas: set[str]
 ) -> OSError | None:
-    """ログ・索引・ロック・staging・計画ファイルの後始末。各段は独立で、最初の失敗を返す。
+    """ログ・索引・staging・計画ファイルの後始末。各段は独立で、最初の失敗を返す。
 
-    ロックを別の実行が引き継いでいるとき（token が違う）は、ログと索引だけを直す。
+    staging は、今回 error 以外で終わった項目（shas）の分だけを消す。同じ中身の資料は
+    staging を共有するので、全項目が終わってから消す。
     """
-    mine = owns(data_dir, token)  # release の前に確かめる
     steps = [
         lambda: bundle.append_log(vault, done, now) if done else None,
         lambda: bundle.write_indexes(vault),
+        *(
+            lambda path=path: path.unlink(missing_ok=True)
+            for sha in shas
+            for path in (staging_path(data_dir, sha), _unreadable_path(data_dir, sha))
+        ),
+        lambda: (vault.root / PLAN_NAME).unlink(missing_ok=True),
     ]
-    if mine:
-        steps += [
-            lambda: release(data_dir, token),
-            lambda: shutil.rmtree(data_dir / "staging", ignore_errors=True),
-            lambda: (vault.root / PLAN_NAME).unlink(missing_ok=True),
-        ]
     failure = None
     for step in steps:
         try:

@@ -8,7 +8,6 @@ from datetime import UTC, datetime
 import pytest
 from helpers import put
 from vault_kb import bundle, watch
-from vault_kb.lock import release
 from vault_kb.reconcile import apply, prepare
 from vault_kb.vault import init_vault, install_obsidian_assets
 
@@ -110,7 +109,6 @@ def test_00_inboxの資料は20_projectsの案件と区分へ移りノートはn
     assert [(i["source"], i["kind"], i["project"]) for i in items] == [
         ("00_inbox/見積.txt", "inbox", None)
     ]
-    release(data_dir)  # 項目があるとロックが残る（apply が解く）
     result = _file(vault, data_dir, "A社", "見積")
 
     assert [r["status"] for r in result["results"]] == ["filed"]
@@ -131,7 +129,6 @@ def test_30_shared直下のファイルは案件sharedのinboxになる(vault, d
     assert [(i["source"], i["kind"], i["project"]) for i in items] == [
         ("30_shared/規程.txt", "inbox", "shared")
     ]
-    release(data_dir)
     _file(vault, data_dir, "shared", "99_その他")
 
     assert (vault.root / "30_shared" / "99_その他" / "規程.txt").is_file()
@@ -291,7 +288,6 @@ def test_40_knowledge直下の資料は区分へ移りノートは_notes_40_know
     assert [(i["source"], i["kind"], i["project"]) for i in items] == [
         ("40_knowledge/手順メモ.txt", "inbox", "knowledge")
     ]
-    release(data_dir)
     result = _file(vault, data_dir, "knowledge", "手順")
 
     assert [r["status"] for r in result["results"]] == ["filed"]
