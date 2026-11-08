@@ -279,3 +279,241 @@ def test_置き場がないときも何も出さず終了コード0(tmp_path):
 
     assert result.returncode == 0
     assert result.stdout == ""
+
+
+WIKI_GUIDE = PLUGIN / "references" / "wiki.md"
+
+
+def wiki_plan_of(root: Path) -> Path:
+    return root / ".vault-kb-wiki-plan.json"
+
+
+@pytest.mark.parametrize("sub", ["wiki-check", "wiki-apply"])
+def test_wiki_check_wiki_applyは自分の計画だけ通す(env, sub):
+    data, root, head = env
+    plan = wiki_plan_of(root)
+
+    slash = approve(data, "Bash", {"command": f'{head} {sub} "{plan.as_posix()}"'})
+    back = approve(data, "Bash", {"command": f'python "{RUN}" --data "{data}" {sub} "{plan}"'})
+
+    assert json.loads(slash.stdout) == ALLOW
+    assert json.loads(back.stdout) == ALLOW
+
+
+@pytest.mark.parametrize("sub", ["wiki-check", "wiki-apply"])
+@pytest.mark.parametrize(
+    "tail",
+    [
+        "",
+        '"C:/x/other/.vault-kb-wiki-plan.json"',
+        '"{plan}" extra',
+        '"{plan}" "{plan}"',
+        '"{plan}"; ls',
+        '"{plan}" && ls',
+        '"{plan}" | cat',
+        '"{vault}/.vault-kb-plan.json"',
+        "--help",
+    ],
+    ids=[
+        "引数なし",
+        "別パス",
+        "付け足し",
+        "二重",
+        "セミコロン",
+        "and",
+        "パイプ",
+        "片づけの計画",
+        "オプション",
+    ],
+)
+def test_wiki計画に引数なし_別パス_付け足しは通さない(env, sub, tail):
+    data, root, head = env
+    tail = tail.format(plan=wiki_plan_of(root).as_posix(), vault=root.as_posix())
+
+    result = approve(data, "Bash", {"command": f"{head} {sub} {tail}".rstrip()})
+
+    assert result.returncode == 0
+    assert result.stdout == ""
+
+
+def test_wiki計画は片づけのapplyの許可に混ざらない(env):
+    data, root, head = env
+
+    wiki_to_apply = approve(data, "Bash", {"command": f'{head} apply "{wiki_plan_of(root)}"'})
+    plan_to_wiki = approve(data, "Bash", {"command": f'{head} wiki-apply "{plan_of(root)}"'})
+
+    assert wiki_to_apply.stdout == ""
+    assert plan_to_wiki.stdout == ""
+
+
+def test_Monitorはwiki_applyを通さない(env):
+    data, root, head = env
+
+    result = approve(data, "Monitor", {"command": f'{head} wiki-apply "{wiki_plan_of(root)}"'})
+
+    assert result.stdout == ""
+
+
+@pytest.mark.parametrize("tool", ["Read", "Write", "Edit"])
+def test_wiki計画のRead_Write_Editを通す(env, tool):
+    data, root, _ = env
+
+    result = approve(data, tool, {"file_path": wiki_plan_of(root).as_posix()})
+
+    assert json.loads(result.stdout) == ALLOW
+
+
+def test_wikiガイドのReadだけを通す(env):
+    data, _, _ = env
+
+    read = approve(data, "Read", {"file_path": WIKI_GUIDE.as_posix()})
+    write = approve(data, "Write", {"file_path": WIKI_GUIDE.as_posix()})
+
+    assert json.loads(read.stdout) == ALLOW
+    assert write.stdout == ""
+
+
+def test_別のフォルダのwiki計画は通さない(env):
+    data, root, _ = env
+
+    result = approve(
+        data, "Write", {"file_path": (root / "other" / ".vault-kb-wiki-plan.json").as_posix()}
+    )
+
+    assert result.stdout == ""
+
+
+@pytest.mark.parametrize(
+    "stdin",
+    ["", "{", '{"tool_name": "Bash", "tool_input": {"command": "python run.py wiki-check"}}'],
+    ids=["空", "壊れたJSON", "引数のないコマンド"],
+)
+def test_wiki版_壊れた入力でも何も出さず終了コード0(env, stdin):
+    data, _, _ = env
+
+    result = approve_raw(data, stdin)
+
+    assert result.returncode == 0
+    assert result.stdout == ""
+    assert result.stderr == ""
+
+
+def test_wiki計画名はrun_pyとcliで同じ():
+    from vault_kb import cli  # noqa: PLC0415
+
+    sys.path.insert(0, str(PLUGIN))
+    try:
+        import run  # noqa: PLC0415
+    finally:
+        sys.path.remove(str(PLUGIN))
+
+    assert run.WIKI_PLAN_NAME == cli.WIKI_PLAN_NAME
+
+
+@pytest.mark.parametrize("tool", ["Bash", "Monitor"])
+@pytest.mark.parametrize(
+    "template",
+    [
+        '{head} wiki-check "{root}/$(echo aGk= | base64 -d | sh)/../.vault-kb-wiki-plan.json"',
+        '{head} wiki-apply "{root}/`id`/../.vault-kb-wiki-plan.json"',
+        '{head} apply "{root}/$(id)/../.vault-kb-plan.json"',
+        '{head} apply "{root}/`id`/../.vault-kb-plan.json"',
+        '{head} wiki-check "{root}/.vault-kb-wiki-plan.json$(id)"',
+        '{head} wiki-apply "{root}/../{name}/.vault-kb-wiki-plan.json"',
+        '{head} apply "{root}/../{name}/.vault-kb-plan.json"',
+        'python "{run}/$(id)/../run.py" --data "{data}" wiki-check "{wiki}"',
+        'python "{run}/`id`/../run.py" --data "{data}" apply "{plan}"',
+        'python "{run}" --data "{data}/$(id)/../" wiki-apply "{wiki}"',
+        'python "{run}" --data "{data}/`id`/../{dname}" apply "{plan}"',
+        'python "{run}" --data "{data}/../{dname}" wiki-check "{wiki}"',
+        'python "{run}/../run.py" --data "{data}" apply "{plan}"',
+        '{head} wiki-check "{wiki}\n"',
+        "{head} status $(id)",
+        "{head} watch `id`",
+    ],
+)
+def test_シェル展開と親ディレクトリ参照を含むコマンドは通さない(env, tool, template):
+    data, root, head = env
+    command = template.format(
+        head=head,
+        root=root.as_posix(),
+        name=root.name,
+        run=RUN.as_posix(),
+        data=data.as_posix(),
+        dname=data.name,
+        plan=plan_of(root).as_posix(),
+        wiki=wiki_plan_of(root).as_posix(),
+    )
+
+    result = approve(data, tool, {"command": command})
+
+    assert result.returncode == 0
+    assert result.stdout == ""
+
+
+@pytest.mark.parametrize("tool", ["Bash", "Monitor"])
+@pytest.mark.parametrize("sep", ["\n", "\r", "\r\n"], ids=["LF", "CR", "CRLF"])
+@pytest.mark.parametrize(
+    "template",
+    [
+        '{head} wiki-apply{sep}"{wiki}"',
+        '{head} wiki-check{sep}"{wiki}"',
+        '{head} apply{sep}"{plan}"',
+        '{head} watch{sep}"{plan}"',
+        'python{sep}"{run}" --data "{data}" wiki-apply "{wiki}"',
+        'python "{run}" --data{sep}"{data}" apply "{plan}"',
+        '{head} wiki-apply "{wiki}"{sep}',
+    ],
+    ids=["wiki-apply", "wiki-check", "apply", "watch", "pythonの後", "--dataの後", "末尾"],
+)
+def test_引用外の改行を含むコマンドは通さない(env, tool, sep, template):
+    data, root, head = env
+    command = template.format(
+        head=head,
+        sep=sep,
+        run=RUN.as_posix(),
+        data=data.as_posix(),
+        plan=plan_of(root).as_posix(),
+        wiki=wiki_plan_of(root).as_posix(),
+    )
+
+    result = approve(data, tool, {"command": command})
+
+    assert result.returncode == 0
+    assert result.stdout == ""
+
+
+def _symlink_plan(root: Path, name: str, tmp_path: Path) -> Path:
+    """vault 直下の計画ファイルを、別の場所のファイルへのシンボリックリンクにする。"""
+    target = tmp_path / "target.json"
+    target.write_text("{}", encoding="utf-8")
+    link = root / name
+    try:
+        os.symlink(target, link)
+    except OSError:
+        pytest.skip(reason="この環境ではシンボリックリンクを作れない")
+    return link
+
+
+@pytest.mark.parametrize("name", [".vault-kb-plan.json", ".vault-kb-wiki-plan.json"])
+@pytest.mark.parametrize("tool", ["Read", "Write", "Edit"])
+def test_計画ファイルがシンボリックリンクならRead_Write_Editを通さない(env, tmp_path, name, tool):
+    data, root, _ = env
+    link = _symlink_plan(root, name, tmp_path)
+
+    result = approve(data, tool, {"file_path": link.as_posix()})
+
+    assert result.stdout == ""
+
+
+@pytest.mark.parametrize(
+    ("name", "sub"),
+    [(".vault-kb-plan.json", "apply"), (".vault-kb-wiki-plan.json", "wiki-apply")],
+)
+def test_計画ファイルがシンボリックリンクならBashのコマンドを通さない(env, tmp_path, name, sub):
+    data, root, head = env
+    link = _symlink_plan(root, name, tmp_path)
+
+    result = approve(data, "Bash", {"command": f'{head} {sub} "{link.as_posix()}"'})
+
+    assert result.stdout == ""

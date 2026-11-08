@@ -13,7 +13,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from . import bundle, lock, reconcile, watch
+from . import bundle, lock, reconcile, watch, wiki
 from .vault import (
     ConfigError,
     atomic_write,
@@ -24,6 +24,8 @@ from .vault import (
 )
 
 _LOG_HINT = "処理した資料の記録は log.md にあります"
+WIKI_PLAN_NAME = ".vault-kb-wiki-plan.json"  # vault の直下。wiki-apply が受け付ける唯一の計画
+# run.py の WIKI_PLAN_NAME と同じ値にする
 
 
 class _ApplyFailed(OSError):
@@ -39,6 +41,10 @@ def _parser() -> argparse.ArgumentParser:
     sub.add_parser("prepare", help="追従・削除を反映し、判断が要る資料を変換して返す")
     apply = sub.add_parser("apply", help="計画（JSON）どおりに資料を置いてノートを書く")
     apply.add_argument("plan")
+    wiki_check = sub.add_parser("wiki-check", help="統合ページ・テーマページ・保存した回答の状態")
+    wiki_check.add_argument("plan")
+    wiki_apply = sub.add_parser("wiki-apply", help="計画（JSON）どおりに .wiki/ へ書く")
+    wiki_apply.add_argument("plan")
     sub.add_parser("reindex", help="index.md を作り直す")
     sub.add_parser("watch", help="vault の変化を 1 行ずつ出す（Ctrl+C か unwatch で終わる）")
     sub.add_parser("unwatch", help="見張りに停止の印を書き、確認事項を返す")
@@ -68,6 +74,11 @@ def _configure(data_dir: Path, vault_arg: str) -> dict[str, Any]:
     return {"vault": str(vault.root)}
 
 
+def _same_file(path: Path, expected: Path) -> bool:
+    """同じファイルを指し、固定の計画自体がシンボリックリンクでないか。"""
+    return path.resolve() == expected.resolve() and not expected.is_symlink()
+
+
 def _run(args: argparse.Namespace, data_dir: Path) -> dict[str, Any] | list[Any] | None:
     """サブコマンドを実行し、JSON にする結果を返す（watch は None）。"""
     if args.command == "configure":
@@ -89,6 +100,23 @@ def _run(args: argparse.Namespace, data_dir: Path) -> dict[str, Any] | list[Any]
             return {"busy": True}
         except OSError as error:  # 後処理の失敗。処理した資料は log.md に残っている
             raise _ApplyFailed(str(error)) from error
+    if args.command == "wiki-check":
+        plan = json.loads(Path(args.plan).read_text(encoding="utf-8"))
+        requests = plan.get("requests") if isinstance(plan, dict) else None
+        if not isinstance(requests, list) or not all(isinstance(r, dict) for r in requests):
+            raise ValueError("requests は request の一覧で指定してください")
+        return {"results": [wiki.check(vault, request) for request in requests]}
+    if args.command == "wiki-apply":
+        fixed = vault.root / WIKI_PLAN_NAME
+        if not _same_file(Path(args.plan), fixed):
+            raise ValueError(f"計画は vault 直下の {WIKI_PLAN_NAME} だけ指定できます: {args.plan}")
+        plan = json.loads(fixed.read_text(encoding="utf-8"))
+        if not isinstance(plan, dict):
+            raise ValueError("計画は JSON のオブジェクトで指定してください")
+        result = wiki.apply(vault, data_dir, plan, now)
+        if "busy" not in result:
+            fixed.unlink(missing_ok=True)
+        return result
     if args.command == "reindex":
         bundle.write_indexes(vault)
         return {"reindexed": True}

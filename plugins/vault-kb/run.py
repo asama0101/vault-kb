@@ -33,6 +33,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent
 REQUIREMENTS = ROOT / "requirements.txt"
 RECONCILE = ROOT / "references" / "reconcile.md"
+WIKI_GUIDE = ROOT / "references" / "wiki.md"
 # requirements.txt の固定版が入る Python の範囲（numpy 2.5.4 は >=3.12、markitdown 0.1.9 は <3.15）
 MIN_PYTHON = (3, 12)
 MAX_PYTHON = (3, 15)  # この版は含まない
@@ -40,6 +41,7 @@ APPROX_SIZE = "約 300 MB"
 MIN_FREE_MB = 500
 PYPI_URL = "https://pypi.org/simple/"
 PLAN_NAME = ".vault-kb-plan.json"
+WIKI_PLAN_NAME = ".vault-kb-wiki-plan.json"  # vault_kb/cli.py の WIKI_PLAN_NAME と同じ値にする
 # 確認なしで通す run.py のサブコマンド（init の setup --yes・configure は確認を出したまま）
 UNATTENDED = {"status", "prepare", "watch", "unwatch", "record-stop"}
 
@@ -337,24 +339,54 @@ def _plan_path(data: Path) -> Path | None:
     return root / PLAN_NAME if root is not None else None
 
 
+def _wiki_plan_path(data: Path) -> Path | None:
+    """設定済みの vault の wiki 計画ファイル。未設定・壊れていれば None。"""
+    root, _ = _configured_vault(data)
+    return root / WIKI_PLAN_NAME if root is not None else None
+
+
 def _same(path: str | Path, expected: Path) -> bool:
     """同じファイルを指すか（`\\`・`/`・大文字小文字・ジャンクションの違いを吸収する）。"""
     return Path(path).resolve() == expected.resolve()
 
 
-def _is_own_command(command: str, data: Path, plan: Path | None, subs: set[str]) -> bool:
+def _is_plan(path: str | Path, plan: Path) -> bool:
+    """計画ファイルを指すか。計画自体がシンボリックリンクなら不可（リンク先を読み書きさせない）。"""
+    return _same(path, plan) and not plan.is_symlink()
+
+
+def _is_own_command(
+    command: str,
+    data: Path,
+    plan: Path | None,
+    subs: set[str],
+    wiki_plan: Path | None = None,
+) -> bool:
     """`python "<ROOT>/run.py" --data "<DATA>" <サブ> [計画]` の 1 コマンドだけに完全一致するか。"""
+    # シェルが展開する文字と改行は不可。shlex は引用外の改行を空白に畳むので、生の文字列で見る
+    if any(c in command for c in "$`\n\r"):
+        return False
     try:
         tokens = shlex.split(command)
     except ValueError:
         return False
     if len(tokens) < 5 or tokens[0] != "python" or tokens[2] != "--data":
         return False
+    # パスの .. は resolve が文字列のまま畳むので不可
+    if any(".." in Path(token).parts for token in (tokens[1], tokens[3], *tokens[5:])):
+        return False
     if not _same(tokens[1], ROOT / "run.py") or not _same(tokens[3], data):
         return False
     sub, args = tokens[4], tokens[5:]
     if sub == "apply":
-        return "apply" in subs and plan is not None and len(args) == 1 and _same(args[0], plan)
+        return "apply" in subs and plan is not None and len(args) == 1 and _is_plan(args[0], plan)
+    if sub in ("wiki-check", "wiki-apply"):
+        return (
+            sub in subs
+            and wiki_plan is not None
+            and len(args) == 1
+            and _is_plan(args[0], wiki_plan)
+        )
     return sub in subs and not args
 
 
@@ -365,14 +397,18 @@ def _approve(data: Path) -> int:
         payload = json.loads(sys.stdin.read())
         tool, tool_input = payload["tool_name"], payload["tool_input"]
         plan = _plan_path(data)
+        wiki_plan = _wiki_plan_path(data)
         if tool == "Bash":
-            allowed = _is_own_command(tool_input["command"], data, plan, UNATTENDED | {"apply"})
+            subs = UNATTENDED | {"apply", "wiki-check", "wiki-apply"}
+            allowed = _is_own_command(tool_input["command"], data, plan, subs, wiki_plan)
         elif tool == "Monitor":
             allowed = _is_own_command(tool_input["command"], data, plan, {"watch"})
         elif tool in ("Read", "Write", "Edit"):
             path = tool_input["file_path"]
-            allowed = (plan is not None and _same(path, plan)) or (
-                tool == "Read" and _same(path, RECONCILE)
+            allowed = (
+                (plan is not None and _is_plan(path, plan))
+                or (wiki_plan is not None and _is_plan(path, wiki_plan))
+                or (tool == "Read" and (_same(path, RECONCILE) or _same(path, WIKI_GUIDE)))
             )
         else:
             allowed = False
