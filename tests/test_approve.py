@@ -396,3 +396,56 @@ def test_wiki版_壊れた入力でも何も出さず終了コード0(env, stdin
     assert result.returncode == 0
     assert result.stdout == ""
     assert result.stderr == ""
+
+
+def test_wiki計画名はrun_pyとcliで同じ():
+    from vault_kb import cli  # noqa: PLC0415
+
+    sys.path.insert(0, str(PLUGIN))
+    try:
+        import run  # noqa: PLC0415
+    finally:
+        sys.path.remove(str(PLUGIN))
+
+    assert run.WIKI_PLAN_NAME == cli.WIKI_PLAN_NAME
+
+
+@pytest.mark.parametrize("tool", ["Bash", "Monitor"])
+@pytest.mark.parametrize(
+    "template",
+    [
+        '{head} wiki-check "{root}/$(echo aGk= | base64 -d | sh)/../.vault-kb-wiki-plan.json"',
+        '{head} wiki-apply "{root}/`id`/../.vault-kb-wiki-plan.json"',
+        '{head} apply "{root}/$(id)/../.vault-kb-plan.json"',
+        '{head} apply "{root}/`id`/../.vault-kb-plan.json"',
+        '{head} wiki-check "{root}/.vault-kb-wiki-plan.json$(id)"',
+        '{head} wiki-apply "{root}/../{name}/.vault-kb-wiki-plan.json"',
+        '{head} apply "{root}/../{name}/.vault-kb-plan.json"',
+        'python "{run}/$(id)/../run.py" --data "{data}" wiki-check "{wiki}"',
+        'python "{run}/`id`/../run.py" --data "{data}" apply "{plan}"',
+        'python "{run}" --data "{data}/$(id)/../" wiki-apply "{wiki}"',
+        'python "{run}" --data "{data}/`id`/../{dname}" apply "{plan}"',
+        'python "{run}" --data "{data}/../{dname}" wiki-check "{wiki}"',
+        'python "{run}/../run.py" --data "{data}" apply "{plan}"',
+        '{head} wiki-check "{wiki}\n"',
+        "{head} status $(id)",
+        "{head} watch `id`",
+    ],
+)
+def test_シェル展開と親ディレクトリ参照を含むコマンドは通さない(env, tool, template):
+    data, root, head = env
+    command = template.format(
+        head=head,
+        root=root.as_posix(),
+        name=root.name,
+        run=RUN.as_posix(),
+        data=data.as_posix(),
+        dname=data.name,
+        plan=plan_of(root).as_posix(),
+        wiki=wiki_plan_of(root).as_posix(),
+    )
+
+    result = approve(data, tool, {"command": command})
+
+    assert result.returncode == 0
+    assert result.stdout == ""

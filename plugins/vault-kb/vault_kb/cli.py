@@ -25,6 +25,7 @@ from .vault import (
 
 _LOG_HINT = "処理した資料の記録は log.md にあります"
 WIKI_PLAN_NAME = ".vault-kb-wiki-plan.json"  # vault の直下。wiki-apply が受け付ける唯一の計画
+# run.py の WIKI_PLAN_NAME と同じ値にする
 
 
 class _ApplyFailed(OSError):

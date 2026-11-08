@@ -41,7 +41,7 @@ APPROX_SIZE = "約 300 MB"
 MIN_FREE_MB = 500
 PYPI_URL = "https://pypi.org/simple/"
 PLAN_NAME = ".vault-kb-plan.json"
-WIKI_PLAN_NAME = ".vault-kb-wiki-plan.json"
+WIKI_PLAN_NAME = ".vault-kb-wiki-plan.json"  # vault_kb/cli.py の WIKI_PLAN_NAME と同じ値にする
 # 確認なしで通す run.py のサブコマンド（init の setup --yes・configure は確認を出したまま）
 UNATTENDED = {"status", "prepare", "watch", "unwatch", "record-stop"}
 
@@ -363,6 +363,11 @@ def _is_own_command(
     except ValueError:
         return False
     if len(tokens) < 5 or tokens[0] != "python" or tokens[2] != "--data":
+        return False
+    # シェルが展開する文字と改行は不可。パスの .. は resolve が文字列のまま畳むので不可
+    if any(c in token for token in tokens for c in "$`\n\r"):
+        return False
+    if any(".." in Path(token).parts for token in (tokens[1], tokens[3], *tokens[5:])):
         return False
     if not _same(tokens[1], ROOT / "run.py") or not _same(tokens[3], data):
         return False
