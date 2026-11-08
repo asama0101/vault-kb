@@ -7,7 +7,7 @@ import os
 import re
 import unicodedata
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -52,8 +52,6 @@ NOTE_KEYS = (
 _HEAD_BYTES = 64 * 1024
 _KEY_LINE = re.compile(r"([^:\s][^:]*):\s*(.*)")
 _SHA256 = re.compile(r"[0-9a-f]{64}")
-LOG_KEEP_DAYS = 90  # log.md に残す日数（これより古い日付の見出しは消す）
-_LOG_HEADING = re.compile(r"## (\d{4}-\d{2}-\d{2})")
 _NOTE_CACHE: dict[Path, tuple[tuple[int, int], bool]] = {}  # 見張りが毎回開かないための記憶
 _PROJECT_ROOTS_FOLDED = {fold_name(name) for name in PROJECT_ROOTS}
 
@@ -383,28 +381,10 @@ def write_indexes(vault: Vault) -> None:
     _write_index(vault.root / "index.md", head + "".join(root_lines))
 
 
-def _prune_log(text: str, today: datetime) -> str:
-    """LOG_KEEP_DAYS 日より古い日付の見出しと、その下の行を消す（見出しの前の文章は残す）。"""
-    cutoff = (today - timedelta(days=LOG_KEEP_DAYS)).date().isoformat()
-    kept = []
-    old = False
-    for line in text.splitlines(keepends=True):
-        if line.startswith("#"):  # 見出し。日付の見出しだけが、古ければ消える（ほかの見出しは残す）
-            heading = _LOG_HEADING.fullmatch(line.rstrip("\r\n"))
-            old = bool(heading) and heading[1] < cutoff
-        if not old:
-            kept.append(line)
-    pruned = "".join(kept)
-    return pruned.rstrip("\n") + "\n" if pruned.strip() else ""
-
-
 def append_log(vault: Vault, entries: list[str], now: datetime) -> None:
-    """log.md の今日の見出しの直後に entries を足す（見出しがなければ先頭に作る）。
-
-    LOG_KEEP_DAYS 日より古い日付の見出しは、このとき消す。
-    """
+    """log.md の今日の見出しの直後に entries を足す（見出しがなければ先頭に作る）。"""
     path = vault.root / "log.md"
-    existing = _prune_log(path.read_text(encoding="utf-8"), now) if path.exists() else ""
+    existing = path.read_text(encoding="utf-8") if path.exists() else ""
     heading = f"## {now.date().isoformat()}\n"
     lines = "".join(f"- {entry}\n" for entry in entries)
     if existing.startswith(heading):

@@ -40,5 +40,5 @@
   <text x="474" y="314" font-size="14" fill="#7a2e00"><tspan font-weight="bold">.notes/</tspan>　隠しフォルダ</text>
   <text x="474" y="334" font-size="13" fill="#7a2e00">ノートと、案件・区分の index.md</text>
   <text x="474" y="362" font-size="14" fill="#7a2e00"><tspan font-weight="bold">index.md</tspan>　案件の一覧（vault 直下）</text>
-  <text x="474" y="388" font-size="14" fill="#7a2e00"><tspan font-weight="bold">log.md</tspan>　履歴・直近 90 日分（vault 直下）</text>
+  <text x="474" y="388" font-size="14" fill="#7a2e00"><tspan font-weight="bold">log.md</tspan>　履歴（vault 直下）</text>
 </svg>

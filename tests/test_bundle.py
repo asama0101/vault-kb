@@ -414,45 +414,25 @@ def _write_log(vault, text):
     (vault.root / "log.md").write_text(text, encoding="utf-8")
 
 
-def test_append_logは90日より古い日付の見出しを行ごと消し_境界の日は残す(vault):
-    _write_log(
-        vault,
-        "## 2026-10-31\n\n- 新\n\n## 2026-08-04\n\n- 境界\n\n## 2026-08-03\n\n- 古1\n- 古2\n",
-    )
+def test_append_logは古い日付の見出しも消さない(vault):
+    _write_log(vault, "## 2026-10-31\n\n- 新\n\n## 2026-01-01\n\n- 古1\n- 古2\n")
 
     append_log(vault, ["**Filed** 今日"], datetime(2026, 11, 2, 9, 0))
 
     assert (vault.root / "log.md").read_text(encoding="utf-8") == (
-        "## 2026-11-02\n\n- **Filed** 今日\n\n## 2026-10-31\n\n- 新\n\n## 2026-08-04\n\n- 境界\n"
+        "## 2026-11-02\n\n- **Filed** 今日\n\n## 2026-10-31\n\n- 新\n\n"
+        "## 2026-01-01\n\n- 古1\n- 古2\n"
     )
 
 
 def test_append_logは見出しより前の文章を残す(vault):
-    _write_log(vault, "メモ\n\n## 2026-01-01\n\n- 古い\n")
+    _write_log(vault, "メモ\n\n## 2026-10-31\n\n- 前\n")
 
     append_log(vault, ["今日"], datetime(2026, 11, 2, 9, 0))
 
     assert (vault.root / "log.md").read_text(encoding="utf-8") == (
-        "## 2026-11-02\n\n- 今日\n\nメモ\n"
+        "## 2026-11-02\n\n- 今日\n\nメモ\n\n## 2026-10-31\n\n- 前\n"
     )
-
-
-def test_append_logは古い日付の見出しの下にある日付でない見出しを残す(vault):
-    _write_log(vault, "## 2026-01-01NN- 古いNN## 私のメモNN- 大事N".replace("N", "\n"))
-
-    append_log(vault, ["今日"], datetime(2026, 11, 2, 9, 0))
-
-    assert (vault.root / "log.md").read_text(encoding="utf-8") == (
-        "## 2026-11-02NN- 今日NN## 私のメモNN- 大事N".replace("N", "\n")
-    )
-
-
-def test_append_logはすべて古ければ今日の見出しだけになる(vault):
-    _write_log(vault, "## 2026-01-01\n\n- 古い\n")
-
-    append_log(vault, ["今日"], datetime(2026, 11, 2, 9, 0))
-
-    assert (vault.root / "log.md").read_text(encoding="utf-8") == "## 2026-11-02\n\n- 今日\n"
 
 
 def test_dateが文字列でないノートがあっても索引を書け_日付なしとして最後に並ぶ(vault):
