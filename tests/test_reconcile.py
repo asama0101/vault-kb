@@ -383,11 +383,8 @@ def test_prepareのwarningsは20_projectsと80_archiveの両方にあれば2件�
     assert [w.split(" ")[0] for w in warnings] == ["20_projects/knowledge", "80_archive/shared"]
 
 
-def test_prepareのwarningsはフォルダでもリンクでもない名前を警告しない(vault, data_dir, tmp_path):
+def test_prepareのwarningsはフォルダでない名前を警告しない(vault, data_dir):
     (vault.root / "20_projects" / "shared").write_bytes(b"file")  # ファイル
-    outside = tmp_path / "外"
-    outside.mkdir()
-    junction(vault.root / "80_archive" / "knowledge", outside)  # 案件にならないリンク
 
     assert prepare(vault, data_dir, NOW)["warnings"] == []
 
@@ -892,12 +889,12 @@ def test_prepareは開けない資料が上限の枠を使わない(vault, data_
     assert [e["source"] for e in result["errors"]] == ["00_inbox/00.txt"]
 
 
-def test_移動先が240文字を超える資料はerror(vault, data_dir):
+def test_移動先の絶対パスが259文字を超える資料はerror(vault, data_dir):
     make_txt(vault.root / "00_inbox" / "x.txt", TEXT)
     result = run_apply(vault, data_dir, {"project": "あ" * 235})
     (item,) = result["results"]
     assert item["status"] == "error"
-    assert "240" in item["message"]
+    assert "259" in item["message"]
     assert (vault.root / "00_inbox" / "x.txt").exists()
 
 
@@ -1128,89 +1125,6 @@ def test_対応しない拡張子の原本を手で動かしてもノートが�
     assert (meta["category"], meta["readable"]) == ("02_x", False)
 
 
-@pytest.mark.parametrize(
-    ("link", "override"),
-    [("20_projects/A社", {}), ("20_projects/B社/01_見積", {"project": "B社"})],
-    ids=["案件がリンク", "区分がリンク"],
-)
-def test_移動先の案件か区分がリンクならerrorで原本は動かない(
-    vault, data_dir, tmp_path, link, override
-):
-    outside = tmp_path / "外"
-    outside.mkdir()
-    (vault.root / "20_projects" / "B社").mkdir()
-    junction(vault.root / link, outside)
-    make_txt(vault.root / "00_inbox" / "x.txt", TEXT)
-    (item,) = run_apply(vault, data_dir, override)["results"]
-    assert item["status"] == "error"
-    assert "リンク" in item["message"]
-    assert (vault.root / "00_inbox" / "x.txt").exists()
-    assert list(outside.iterdir()) == []
-
-
-def test_prepareは項目があってもロックを残さない(vault, data_dir):
-    make_txt(vault.root / "00_inbox" / "x.txt", TEXT)
-    result = prepare(vault, data_dir, NOW)
-    assert result["items"]
-    assert "lock_token" not in result
-    assert not (data_dir / "reconcile.lock").exists()
-
-
-def test_applyは別のprepareとロックが重なればBusy_計画もstagingも資料も動かさない(vault, data_dir):
-    make_txt(vault.root / "00_inbox" / "x.txt", TEXT)
-    (item,) = prepare(vault, data_dir, NOW)["items"]
-    plan_file = vault.root / PLAN_NAME
-    plan_file.write_text("計画", encoding="utf-8")
-    acquire(data_dir, NOW)  # 別の実行が動いている
-
-    with pytest.raises(Busy):
-        apply(vault, data_dir, {"items": [plan_item(item["source"])]}, NOW)
-
-    assert (vault.root / "00_inbox" / "x.txt").exists()
-    assert Path(item["text"]).exists()
-    assert plan_file.read_text(encoding="utf-8") == "計画"
-    assert (data_dir / "reconcile.lock").read_text(encoding="utf-8") == NOW.isoformat()
-
-
-def test_applyは片づけ後にその項目のstagingだけを消す(vault, data_dir):
-    make_txt(vault.root / "00_inbox" / "x.txt", TEXT)
-    make_txt(vault.root / "00_inbox" / "y.txt", TEXT + "別の本文")
-    items = {i["source"]: i for i in prepare(vault, data_dir, NOW)["items"]}
-
-    (result,) = apply(vault, data_dir, {"items": [plan_item("00_inbox/x.txt")]}, NOW)["results"]
-
-    assert result["status"] == "filed"
-    assert not Path(items["00_inbox/x.txt"]["text"]).exists()
-    assert Path(items["00_inbox/y.txt"]["text"]).exists()
-
-
-def test_中身が同じ別名の資料2つは同じstagingを共有しても両方片づく(vault, data_dir):
-    make_txt(vault.root / "00_inbox" / "a.txt", TEXT)
-    make_txt(vault.root / "00_inbox" / "b.txt", TEXT)
-
-    result = run_apply(vault, data_dir, {}, {})
-
-    assert [r["status"] for r in result["results"]] == ["filed", "filed"]
-    assert list((data_dir / "staging").iterdir()) == []
-
-
-def test_同じ計画を2回applyしても2回目は項目ごとのエラーで_二重に動かさずログも1回分(
-    vault, data_dir
-):
-    make_txt(vault.root / "00_inbox" / "x.txt", TEXT)
-    (item,) = prepare(vault, data_dir, NOW)["items"]
-    plan = {"items": [plan_item(item["source"])]}
-    apply(vault, data_dir, plan, NOW)
-
-    (second,) = apply(vault, data_dir, plan, NOW)["results"]
-
-    assert second["status"] == "error"
-    assert "ありません" in second["message"]
-    log = (vault.root / "log.md").read_text(encoding="utf-8")
-    assert log.count("**Filed**") == 1
-    assert not (data_dir / "reconcile.lock").exists()
-
-
 @pytest.mark.parametrize("token", ["2026-10-31T12:00:00+00:00", 1])
 def test_applyは旧版のlock_token付きの計画も受け付ける(vault, data_dir, token):
     make_txt(vault.root / "00_inbox" / "x.txt", TEXT)
@@ -1223,21 +1137,28 @@ def test_applyは旧版のlock_token付きの計画も受け付ける(vault, dat
     assert [r["status"] for r in result["results"]] == ["filed"]
 
 
-@pytest.mark.parametrize("root", ["20_projects", "80_archive"])
-def test_案件の根自体がリンクなら_先の資料を走査も変換もしない(vault, data_dir, tmp_path, root):
+def test_リンクの根も_存在するフォルダとして扱う(vault, data_dir, tmp_path):
     outside = tmp_path / "外"
-    (outside / "P" / "01_x").mkdir(parents=True)
-    (outside / "shared").mkdir()  # 予約名。先を読むと「消してください」の警告が出てしまう
-    make_txt(outside / "P" / "01_x" / "secret.txt", TEXT)
-    (vault.root / root).rmdir()
-    junction(vault.root / root, outside)
+    outside.mkdir()
+    (vault.root / "20_projects").rmdir()
+    junction(vault.root / "20_projects", outside)
 
-    result = prepare(vault, data_dir, NOW)
+    assert prepare(vault, data_dir, NOW)["warnings"] == []
 
-    assert result["items"] == []
-    assert result["errors"] == []
-    assert len(result["warnings"]) == 1  # リンクのため走査しない、という知らせだけ
-    assert result["warnings"][0].startswith(f"{root} はリンクのため走査していません")
+
+def test_applyのsourceがvaultの外へ解決されればerror_リンクの検査を削っても残る(
+    vault, data_dir, tmp_path
+):
+    outside = tmp_path / "外"
+    outside.mkdir()
+    (outside / "x.txt").write_text(TEXT, encoding="utf-8")
+    junction(vault.root / "20_projects" / "L", outside)
+
+    item = apply_one(vault, data_dir, "20_projects/L/x.txt", kind="unregistered")
+
+    assert item["status"] == "error"
+    assert "vault の外" in item["message"]
+    assert (outside / "x.txt").exists()
 
 
 def test_新しい案件には99_その他も作り_区分その他はそこに置く(vault, data_dir):

@@ -27,7 +27,6 @@ from vault_kb.vault import (
     category_sort_key,
     fold_name,
     is_ignored,
-    is_link,
     is_supported,
     walk,
 )
@@ -135,13 +134,13 @@ def location(vault: Vault, path: Path) -> tuple[str, str] | None:
 
 
 def _shallow(folder: Path) -> tuple[list[Path], list[Path]]:
-    """folder 直下の (フォルダ, ファイル)。リンクは含めない。"""
-    entries = [e for e in folder.iterdir() if not is_link(e)]
+    """folder 直下の (フォルダ, ファイル)。"""
+    entries = list(folder.iterdir())
     return [e for e in entries if e.is_dir()], [e for e in entries if e.is_file()]
 
 
 def projects(vault: Vault) -> list[str]:
-    """案件名（名前順。20_projects・80_archive の案件と shared・knowledge。リンクは除く）。"""
+    """案件名（名前順。20_projects・80_archive の案件と shared・knowledge）。"""
     return sorted({name for name, _ in vault.project_folders()})
 
 
@@ -241,7 +240,7 @@ def originals(vault: Vault) -> list[Path]:
 def inbox_files(vault: Vault) -> list[Path]:
     """00_inbox 直下のファイル（拡張子は問わない。無視する名前を除く）。"""
     inbox = vault.root / INBOX_NAME
-    if not inbox.is_dir() or is_link(inbox):
+    if not inbox.is_dir():
         return []
     _, files = _shallow(inbox)
     return sorted(f for f in files if is_original_file(f))

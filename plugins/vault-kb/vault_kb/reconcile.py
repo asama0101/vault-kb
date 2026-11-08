@@ -25,7 +25,6 @@ from .vault import (
     check_folder_name,
     fold_name,
     is_ignored,
-    is_link,
     is_supported,
     move_file,
     next_category_name,
@@ -33,7 +32,6 @@ from .vault import (
     split_category,
 )
 
-MAX_PATH_LEN = 240
 EXCERPT_CHARS = 4000  # Claude が判断に使う本文の長さ（staging の Read には確認が出る）
 MAX_ITEMS = 20  # 1 回の prepare が返す項目の上限（抜粋が多すぎると Claude が受け取れない）
 # 変換にかける時間の目安（Bash ツールの既定 120 秒を超えにくくするため。保証ではない:
@@ -329,15 +327,10 @@ def _collect(
 
 
 def _warnings(vault: Vault) -> list[str]:
-    """案件の根がリンクで走査していないとき、案件フォルダが予約名（shared・knowledge）と衝突するときの警告。"""
+    """案件フォルダが予約名（shared・knowledge）と衝突するときの警告。"""
     found = []
     for root in PROJECT_ROOTS:
         folder = vault.root / root
-        if is_link(folder):  # 先は vault の外のことがある。読まずに知らせる
-            found.append(
-                f"{root} はリンクのため走査していません（リンクの先は案件として扱いません）"
-            )
-            continue
         if not folder.is_dir():
             continue
         for child in sorted(folder.iterdir()):
@@ -345,7 +338,7 @@ def _warnings(vault: Vault) -> list[str]:
                 (t for name, t in _RESERVED_PROJECTS.items() if fold_name(child.name) == name),
                 None,
             )
-            if target and child.is_dir() and not is_link(child):
+            if target and child.is_dir():
                 found.append(
                     f"{root}/{child.name} は予約名の案件で、{target} と衝突します。"
                     f"中身を {target}/<区分> へ移して、このフォルダを消してください"
@@ -451,9 +444,6 @@ def _destination(vault: Vault, item: Item) -> Path:
         _check_folder(label)
     _check_folder(category)
     folder = project_dir / category
-    for path in (folder.parent, folder):
-        if is_link(path):
-            raise ValueError(f"移動先がリンクです: {vault.rel(path)}")
     if not folder.resolve().is_relative_to(vault.root.resolve()):
         raise ValueError(f"移動先が vault の外です: {vault.rel(folder)}")
     return folder
@@ -587,8 +577,6 @@ def _apply_item(
                 None,
                 sha,
             )
-        if len(vault.rel(original)) > MAX_PATH_LEN:
-            raise ValueError(f"パスが {MAX_PATH_LEN} 文字を超えます: {vault.rel(original)}")
         longest = max(len(str(original)), len(str(vault.note_path(original))))
         if longest > MAX_ABS_PATH:  # ノートは .notes/ と .md の分だけ原本より長い
             raise ValueError(f"ノートを含む絶対パスが {MAX_ABS_PATH} 文字を超えます: {original}")

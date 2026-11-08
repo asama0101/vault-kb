@@ -10,7 +10,7 @@ from typing import Any
 
 from . import bundle, convert
 from .lock import is_fresh, lock_path
-from .vault import INBOX_NAME, Vault, atomic_write, is_link, walk
+from .vault import INBOX_NAME, Vault, atomic_write, walk
 
 STOP_NAME = "watch.stop"  # 置き場に書く、見張りへの停止の印
 
@@ -75,7 +75,7 @@ def snapshot(vault: Vault) -> dict[str, tuple[int, int]]:
     roots = [vault.root / INBOX_NAME, *(folder for _, folder in vault.project_folders())]
     found = {}
     for root in roots:
-        if not root.is_dir() or is_link(root):
+        if not root.is_dir():
             continue
         _, files = walk(root)
         for path in files:

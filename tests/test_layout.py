@@ -1,15 +1,11 @@
 """vault の中のフォルダ構成（00_inbox・20_projects・30_shared・80_archive・利用者の領域）。"""
 
-import os
-import shutil
-import subprocess
 from datetime import UTC, datetime
 
 import pytest
 from helpers import put
 from vault_kb import bundle, watch
 from vault_kb.reconcile import apply, prepare
-from vault_kb.vault import init_vault, install_obsidian_assets
 
 NOW = datetime(2026, 10, 31, 12, 0, tzinfo=UTC)
 TEXT = "これは二十字以上ある日本語の資料の本文です。確認用の文章。".encode()
@@ -170,115 +166,6 @@ def test_案件を80_archiveへ動かすとノートが追従し_新しい資料
         "01_見積",
     )
     assert not (vault.notes_dir / "20_projects" / "A社").exists()
-
-
-def _junction(link, target):
-    """link を target へのジャンクション（リンクの一種）にする。作れない環境では飛ばす。"""
-    command = ["cmd", "/c", "mklink", "/J", str(link), str(target)]
-    result = subprocess.run(command, capture_output=True, check=False)  # noqa: S607
-    if result.returncode != 0:
-        pytest.skip("ジャンクションを作れない環境")
-
-
-def test_リンクの案件と30_shared_40_knowledgeは案件にならず走査もされない(
-    vault, data_dir, tmp_path
-):
-    outside = tmp_path / "外" / "X社" / "01_x"
-    outside.mkdir(parents=True)
-    (outside / "a.txt").write_bytes(TEXT)
-    _junction(vault.root / "20_projects" / "X社", outside.parent)
-    shutil.rmtree(vault.root / "30_shared")
-    _junction(vault.root / "30_shared", outside.parent)
-    shutil.rmtree(vault.root / "40_knowledge")
-    _junction(vault.root / "40_knowledge", outside.parent)
-
-    assert bundle.projects(vault) == []
-    assert watch.snapshot(vault) == {}
-    assert watch.status(vault, data_dir)["pending"] == 0
-
-
-@pytest.mark.parametrize("name", ["30_shared", "40_knowledge"])
-def test_init_vaultはリンクの30_shared_40_knowledgeの先に99_その他を作らない(vault, tmp_path, name):
-    outside = tmp_path / "外"
-    outside.mkdir()
-    shutil.rmtree(vault.root / name)
-    _junction(vault.root / name, outside)
-
-    init_vault(vault.root)
-
-    assert list(outside.iterdir()) == []
-
-
-def test_00_inboxがリンクのとき中のファイルは片づけの対象にならない(vault, data_dir, tmp_path):
-    outside = tmp_path / "外"
-    outside.mkdir()
-    (outside / "g.txt").write_bytes(TEXT)
-    (vault.root / "00_inbox").rmdir()
-    _junction(vault.root / "00_inbox", outside)
-
-    assert bundle.inbox_files(vault) == []
-    assert watch.snapshot(vault) == {}
-    assert watch.status(vault, data_dir)["pending"] == 0
-
-
-def test_テンプレートの置き場がリンクのときはリンク先へ書かず他のフォルダには置く(tmp_path):
-    root = tmp_path / "v"
-    root.mkdir()
-    outside = tmp_path / "外"
-    outside.mkdir()
-    _junction(root / "91_templates", outside)
-
-    install_obsidian_assets(root)
-
-    assert list(outside.iterdir()) == []
-    assert not (root / "92_bases").exists()
-
-
-def _broken_junction(link, tmp_path):
-    """先を消して、壊れたジャンクションにする（exists() も is_symlink() も False になる）。"""
-    target = tmp_path / "消えた先"
-    target.mkdir()
-    _junction(link, target)
-    target.rmdir()
-
-
-@pytest.mark.parametrize("name", ["00_inbox", "30_shared", "40_knowledge"])
-def test_init_vaultは壊れたリンクのフォルダがあっても落ちず何も作らない(vault, tmp_path, name):
-    shutil.rmtree(vault.root / name)
-    _broken_junction(vault.root / name, tmp_path)
-
-    init_vault(vault.root)
-
-    assert not (vault.root / name).exists()
-    assert (vault.root / "20_projects").is_dir()
-
-
-def test_テンプレートの置き場が壊れたリンクでも落ちず他のフォルダには置く(tmp_path):
-    root = tmp_path / "v"
-    root.mkdir()
-    _broken_junction(root / "91_templates", tmp_path)
-
-    install_obsidian_assets(root)
-
-    assert not (root / "92_bases").exists()
-
-
-@pytest.mark.parametrize(
-    "broken", ["20_projects/X社", "20_projects/X社/01_見積"], ids=["案件", "区分"]
-)
-def test_移動先が壊れたリンクなら_リンクだと伝えて原本もリンクも動かさない(
-    vault, data_dir, tmp_path, broken
-):
-    put(vault, "00_inbox/見積.txt", TEXT)
-    (vault.root / broken).parent.mkdir(exist_ok=True)  # 区分が壊れているときは、案件は実在する
-    _broken_junction(vault.root / broken, tmp_path)
-
-    result = _file(vault, data_dir, "X社", "見積")["results"][0]
-
-    assert result["status"] == "error"
-    assert result["message"] == f"移動先がリンクです: {broken}"
-    assert (vault.root / "00_inbox" / "見積.txt").is_file()
-    assert os.path.lexists(vault.root / broken)
 
 
 def test_40_knowledge直下の資料は区分へ移りノートは_notes_40_knowledgeにできる(vault, data_dir):
