@@ -21,16 +21,23 @@ def frontmatter(path: Path) -> dict[str, str]:
     return dict(line.split(": ", 1) for line in head.splitlines() if ": " in line)
 
 
-def test_スキルは5つあり_nameがディレクトリ名と一致する():
-    assert [p.parent.name for p in SKILLS] == ["ask", "init", "resolve", "unwatch", "watch"]
+def test_スキルは6つあり_nameがディレクトリ名と一致する():
+    assert [p.parent.name for p in SKILLS] == [
+        "ask",
+        "init",
+        "resolve",
+        "sweep",
+        "unwatch",
+        "watch",
+    ]
     for skill in SKILLS:
         meta = frontmatter(skill)
         assert meta["name"] == skill.parent.name
         assert meta["description"]
 
 
-def test_init_resolve_unwatch_watchだけが自動起動を禁止している():
-    for name in ("init", "resolve", "unwatch", "watch"):
+def test_init_resolve_sweep_unwatch_watchだけが自動起動を禁止している():
+    for name in ("init", "resolve", "sweep", "unwatch", "watch"):
         assert frontmatter(PLUGIN / f"skills/{name}/SKILL.md")["disable-model-invocation"] == "true"
     assert "disable-model-invocation" not in frontmatter(PLUGIN / "skills/ask/SKILL.md")
 
@@ -51,6 +58,11 @@ def test_watchは片づけのコマンドとMonitorだけを許可しresolveを�
     # resolve は上書き・削除をするので、資料の本文に誘導されても、承認なしで実行されないように
     assert allowed_commands("watch") == ["prepare", "apply *", "release"]
     assert "Monitor" in tools
+
+
+def test_sweepは状態確認と片づけのコマンドだけを承認なしで許可する():
+    # unwatch は動いている見張りを止めるので、sweep には許可しない
+    assert allowed_commands("sweep") == ["status", "prepare", "apply *", "release"]
 
 
 def test_resolveは一覧と片づけのコマンドだけを承認なしで許可し_resolve自体は許可しない():
@@ -89,6 +101,10 @@ def test_askの読み取りはvault_kb配下に限定する():
             ["Read(//**/vault-kb/.vault-kb-plan.json)", "Read(//**/references/reconcile.md)"],
         ),
         (
+            "sweep",
+            ["Read(//**/vault-kb/.vault-kb-plan.json)", "Read(//**/references/reconcile.md)"],
+        ),
+        (
             "unwatch",
             ["Read(//**/vault-kb/.vault-kb-plan.json)", "Read(//**/references/reconcile.md)"],
         ),
@@ -114,7 +130,7 @@ def test_initは診断と状態だけを承認なしで許可しSendMessageとLi
     assert "ListAgents" not in tools
 
 
-@pytest.mark.parametrize("name", ["ask", "resolve", "unwatch", "watch"])
+@pytest.mark.parametrize("name", ["ask", "resolve", "sweep", "unwatch", "watch"])
 def test_計画の書き込みはvault_kbの隠しファイルの計画だけを許可する(name):
     tools = frontmatter(PLUGIN / f"skills/{name}/SKILL.md")["allowed-tools"]
 
@@ -124,7 +140,7 @@ def test_計画の書き込みはvault_kbの隠しファイルの計画だけを
     ]
 
 
-@pytest.mark.parametrize("name", ["ask", "resolve", "unwatch", "watch"])
+@pytest.mark.parametrize("name", ["ask", "resolve", "sweep", "unwatch", "watch"])
 def test_watchとaskとunwatchとresolveはreferencesのreconcileを読む(name):
     text = (PLUGIN / f"skills/{name}/SKILL.md").read_text(encoding="utf-8")
 
