@@ -94,7 +94,7 @@
   <li><a href="#watch">見張りを始める（<code>/vault-kb:watch</code>）</a></li>
   <li><a href="#unwatch">見張りを止める（<code>/vault-kb:unwatch</code>）</a></li>
   <li><a href="#sweep">1 回だけ片づける（<code>/vault-kb:sweep</code>）</a></li>
-  <li><a href="#resolve">同名で中身が違う資料を解決する（<code>/vault-kb:resolve</code>）</a></li>
+  <li><a href="#conflict">同名で中身が違う資料</a></li>
   <li><a href="#manual">手で動かした・書き換えた・消したとき</a></li>
   <li><a href="#approve">確認なしで動く仕組み</a></li>
   <li><a href="#check">照合表（点検のための出典）</a></li>
@@ -145,13 +145,12 @@
     自動で 1 回だけ、状態を調べて 1 行を出す。
     <div class="branch"><b>未設定</b> → 「/vault-kb:init で設定してください」</div>
     <div class="branch"><b>片づけ待ちあり</b> → 「片づけ待ちが N 件あります（/vault-kb:sweep・/vault-kb:watch・/vault-kb:ask で片づきます）」</div>
-    <div class="branch"><b>同名の確認待ちあり</b> → 「同名の確認待ちが N 件あります（/vault-kb:resolve で選べます）」</div>
-    <div class="branch"><b>どちらもなし</b> → 何も出さない。</div>
+    <div class="branch"><b>片づけ待ちなし</b> → 何も出さない。</div>
     <div class="branch"><b>vault が見えない</b>（外付け・同期の切断）→ その旨を出す。</div>
   </div>
   <div class="step claude" data-n="3" data-lane="Claude">通知を会話に挟むだけ。片づけは始めない。</div>
 </div>
-<p class="note">「片づけ待ち」の数え方: <code>00_inbox</code> 直下の資料 ＋ 案件フォルダ直下の資料 ＋ 区分フォルダに手で置かれたノートのない資料 ＋ 原本がなくなったノート ＋ 原本のサイズか更新時刻が変わった資料。同名の確認待ちは別に数える。</p>
+<p class="note">「片づけ待ち」の数え方: <code>00_inbox</code> 直下の資料 ＋ 案件フォルダ直下の資料 ＋ 区分フォルダに手で置かれたノートのない資料 ＋ 原本がなくなったノート ＋ 原本のサイズか更新時刻が変わった資料。</p>
 
 <!-- ============================================================ -->
 <h2 id="ask">3. 資料を置いて質問する <small><code>/vault-kb:ask</code></small></h2>
@@ -160,7 +159,7 @@
   <div class="step user" data-n="1" data-lane="ユーザー">資料（pptx・xlsx・pdf・docx・txt・md・log・cfg・conf・html・htm）を <code>00_inbox</code> に置く。</div>
   <div class="step user" data-n="2" data-lane="ユーザー"><code>/vault-kb:ask ＜質問＞</code> と打つ（例: 「A 社の見積の保守費について資料に何と書いてある？」）。</div>
   <div class="step claude" data-n="3" data-lane="Claude">裏方に状態を聞く。<span class="tag auto">確認なし</span></div>
-  <div class="step py" data-n="4" data-lane="Python">vault のパス、片づけ待ちの件数、同名の確認待ちの件数、別の片づけが進行中か（<code>busy</code>）を返す。</div>
+  <div class="step py" data-n="4" data-lane="Python">vault のパス、片づけ待ちの件数、別の片づけが進行中か（<code>busy</code>）を返す。</div>
   <div class="step claude" data-n="5" data-lane="Claude">
     <div class="branch"><b>未設定</b> → 「/vault-kb:init で初期設定してください」と案内して止まる。<span class="tag stop">止まる</span></div>
     <div class="branch"><b>vault が見えない</b> → そのメッセージを伝えて止まる。<span class="tag stop">止まる</span></div>
@@ -200,7 +199,7 @@
   <div class="step py" data-n="3" data-lane="Python">
     判断が要る資料を集め、1 件ずつ文字に変換する。
     <ul>
-      <li>集めるもの: <code>00_inbox</code> 直下、案件フォルダ直下、区分フォルダに手で置かれたノートのない資料、中身が変わった資料。同名の確認待ちで保留中のものは除く。</li>
+      <li>集めるもの: <code>00_inbox</code> 直下、案件フォルダ直下、区分フォルダに手で置かれたノートのない資料、中身が変わった資料。</li>
       <li>対応する形式は文字に変換する。変換できない・文字が 20 字未満・対応しない形式（zip・png・csv など）は「読めない」印と理由を付ける。開けない（使用中など）は失敗として記録し、次回に回す。</li>
       <li>返すもの: 資料の一覧（名前、置かれた場所、本文の先頭 4000 字、読めるか、更新前の値）、既存の案件と区分の一覧（完了した案件は除く）、取引先の一覧、直したこと、失敗、警告、計画ファイルの置き場所。</li>
       <li>資料が 1 件もなければ、索引を作り直して鍵を外す。</li>
@@ -229,7 +228,7 @@
     <ul>
       <li>資料が vault の中の正しい場所にあるか、リンクでないか、資料として扱える名前かを確かめる。</li>
       <li>行き先を決める: 案件名・区分名は既存に寄せる（大文字小文字の違いは吸収する。全角半角は吸収しない。全角半角まで吸収するのは取引先名だけ）。区分は既存に合わせるか、次の番号を付ける（<code>01_見積</code> のように。99 は <code>その他</code> 専用、98 まで）。新しい案件には <code>99_その他</code> も作る。</li>
-      <li>行き先に同じ名前の原本がある → 中身の指紋が同じなら置いた側を捨てる（<b>Discarded</b>）。違えば動かさず、保留として記録する（<b>conflict</b>）。</li>
+      <li>行き先に同じ名前の原本がある → 中身の指紋が同じなら置いた側を捨てる（<b>Discarded</b>）。違えば動かさず、元の場所に残す（<b>conflict</b>）。</li>
       <li>原本を動かし、ノート（項目欄 ＋ 変換した本文）を <code>.notes</code> の中の対応する場所に書く（<b>Filed</b>）。中身が変わった資料はノートを作り直す（<b>Refreshed</b>）。</li>
       <li>行き先の vault からの相対パスが 240 文字を超える（<code>00_inbox</code>・案件直下から来た資料だけ検査）、行き先に自分のノート以外の <code>.md</code> がある、などは、その 1 件の失敗にする。</li>
     </ul>
@@ -238,7 +237,7 @@
   <div class="step claude" data-n="9" data-lane="Claude">
     <div class="branch"><b>計画の誤り</b> → メッセージを読んで 1 回だけ直し、7 をやり直す。それでも失敗なら鍵を外し、失敗を 1 行で報告して終わる。<span class="tag stop">止まる</span></div>
     <div class="branch"><b>実行時のエラー</b> → 鍵を外し、失敗を 1 行で報告して終わる。<span class="tag stop">止まる</span></div>
-    <div class="branch"><b>成功</b> → 結果を 1 行で報告する。片づけた資料は置いた原本のフルパス。失敗した資料はフルパスと理由。保留（同名で中身が違う）は、後から来た資料と既存の原本のフルパスを示し、<code>/vault-kb:resolve</code> で選べると添える。質問はしない。</div>
+    <div class="branch"><b>成功</b> → 結果を 1 行で報告する。片づけた資料は置いた原本のフルパス。失敗した資料はフルパスと理由。同名で中身が違う資料（conflict）は、後から来た資料と既存の原本のフルパスを示し、動かす・消す指示を待つ。質問はしない。</div>
   </div>
 </div>
 <p class="note">ユーザーの列が空なのは、この手順の間にユーザーがすることがないため。見張りでは報告が会話に 1 行挟まり、質問のときは回答の末尾に添えられる。</p>
@@ -271,14 +270,13 @@
   <div class="head">ユーザー</div><div class="head">Claude</div><div class="head">裏方の処理（Python）</div>
   <div class="step user" data-n="1" data-lane="ユーザー"><code>/vault-kb:unwatch</code> と打つ。</div>
   <div class="step claude" data-n="2" data-lane="Claude">裏方に「停止を要求」させる。<span class="tag auto">確認なし</span></div>
-  <div class="step py" data-n="3" data-lane="Python">停止の印（時刻）を書く。動いている見張りは、次の巡回（約 2 秒後）で「止まった」を出して終わる。あわせて、片づけ待ち・同名の確認待ち・進行中の鍵・読めない資料の一覧を返す。</div>
+  <div class="step py" data-n="3" data-lane="Python">停止の印（時刻）を書く。動いている見張りは、次の巡回（約 2 秒後）で「止まった」を出して終わる。あわせて、片づけ待ち・進行中の鍵・読めない資料の一覧を返す。</div>
   <div class="step claude" data-n="4" data-lane="Claude">未設定なら <code>/vault-kb:init</code> を案内して止まる。そうでなければ、最後に 1 回片づける（<a href="#reconcile">片づけの手順</a>）。失敗は覚えておく。</div>
   <div class="step claude" data-n="5" data-lane="Claude">3 をもう一度実行し、終了時点の確認事項を集める。</div>
   <div class="step claude" data-n="6" data-lane="Claude">
     確認事項を一覧にして示す（ないものは書かない）。
     <ul>
       <li>片づけ待ち（種類と件数）</li>
-      <li>同名の確認待ち（件数。<code>/vault-kb:resolve</code> で選べる）</li>
       <li>進行中の鍵（別の片づけが動いている。解除しない）</li>
       <li>失敗（資料のフルパスと理由。開いたまま・パス長超過など）</li>
       <li>文字を取り出せていない資料（参考。未解消に数えず、質問もしない）</li>
@@ -288,7 +286,6 @@
     解消を試みる。
     <div class="branch"><b>失敗・片づけ待ち</b> → 4 をもう 1 回だけ行い、5 からやり直す。</div>
     <div class="branch"><b>進行中の鍵</b> → 約 30 秒待って 4 と 5 を 1 回だけやり直す。それでも残れば一覧に残す。</div>
-    <div class="branch"><b>同名の確認待ち</b> → <code>/vault-kb:resolve</code> を案内する（ここでは解決しない）。</div>
     <div class="branch"><b>ユーザーの対応が要るもの</b>（アプリを閉じる・ファイルを動かす）→ 一覧にして「対応して再確認するか、このまま終了するか」を聞く。</div>
   </div>
   <div class="step user" data-n="8" data-lane="ユーザー">対応して再確認（5 へ戻る）か、このまま終了かを選ぶ。</div>
@@ -304,52 +301,18 @@
   <div class="step user" data-n="1" data-lane="ユーザー"><code>/vault-kb:sweep</code> と打つ。</div>
   <div class="step claude" data-n="2" data-lane="Claude">手順書を読み、いまある資料を 1 回片づける（<a href="#reconcile">片づけの手順</a>）。<span class="tag auto">確認なし</span></div>
   <div class="step claude" data-n="3" data-lane="Claude">裏方に状態を聞く。<span class="tag auto">確認なし</span></div>
-  <div class="step py" data-n="4" data-lane="Python">vault のパス、片づけ待ちの件数、同名の確認待ちの件数、別の片づけが進行中か（<code>busy</code>）を返す。</div>
+  <div class="step py" data-n="4" data-lane="Python">vault のパス、片づけ待ちの件数、別の片づけが進行中か（<code>busy</code>）を返す。</div>
   <div class="step claude" data-n="5" data-lane="Claude">
     <div class="branch"><b>未設定</b> → 「/vault-kb:init で初期設定してください」と案内して止まる。<span class="tag stop">止まる</span></div>
     <div class="branch"><b>vault が見えない</b> → そのメッセージを伝えて止まる。<span class="tag stop">止まる</span></div>
-    <div class="branch"><b>それ以外</b> → 片づけた件数を 1 行で報告し、残りの片づけ待ち・同名の確認待ち・進行中の片づけがあれば添える。<span class="tag stop">止まる</span></div>
+    <div class="branch"><b>それ以外</b> → 片づけた件数を 1 行で報告し、残りの片づけ待ち・進行中の片づけがあれば添える。<span class="tag stop">止まる</span></div>
   </div>
 </div>
 <p class="note">動いている見張りには触れない（停止の印も <code>log.md</code> への記録も書かない）。片づけについて質問しない。</p>
 
 <!-- ============================================================ -->
-<h2 id="resolve">8. 同名で中身が違う資料を解決する <small><code>/vault-kb:resolve</code></small></h2>
-<p class="lead">片づけの途中で、行き先に同じ名前で中身が違う原本があると、資料は動かされずに元の場所（<code>00_inbox</code> か案件フォルダ直下）に残る。これを「同名の確認待ち」と呼ぶ。中身が同じときは、聞かずに置いた側が消える。</p>
-<div class="flow">
-  <div class="head">ユーザー</div><div class="head">Claude</div><div class="head">裏方の処理（Python）</div>
-  <div class="step user" data-n="1" data-lane="ユーザー"><code>/vault-kb:resolve</code> と打つ。</div>
-  <div class="step claude" data-n="2" data-lane="Claude">裏方に保留の一覧を出させる。</div>
-  <div class="step py" data-n="3" data-lane="Python">保留の記録（vault 直下の <code>.vault-kb-conflicts.json</code>）のうち、資料がまだあり、サイズと更新時刻が記録と同じものだけを有効として、元と先のフルパス・サイズ・更新日時を返す。</div>
-  <div class="step claude" data-n="4" data-lane="Claude">
-    <div class="branch"><b>未設定</b> → <code>/vault-kb:init</code> を案内して止まる。<span class="tag stop">止まる</span></div>
-    <div class="branch"><b>一覧が空</b> → 「同名の確認待ちはありません」と伝えて終わる。<span class="tag stop">止まる</span></div>
-    <div class="branch"><b>あり</b> → 1 件ずつ、既存の原本と後から来た資料（フルパス・サイズ・更新日時）を並べ、3 つの選択肢と、それぞれの結果（戻せないこと）を 1 行添えて示す。既存の原本がもうないときは、そう添える。</div>
-  </div>
-  <div class="step user" data-n="5" data-lane="ユーザー">
-    選ぶ。
-    <ul>
-      <li><b>上書き</b>: 既存の原本を、後から来た資料で置き換える（既存の中身は戻せない）。</li>
-      <li><b>後続を削除</b>: 後から来た資料を削除する（その中身は戻せない）。</li>
-      <li><b>保留のまま</b>: 何もしない。</li>
-    </ul>
-  </div>
-  <div class="step claude" data-n="6" data-lane="Claude">上書き・後続を削除の件だけ、裏方に実行させる。このコマンドは確認なしの対象に入れていないので、毎回確認が出る。拒否されたら、その件は保留のまま残して伝える。<span class="tag ask">確認あり</span></div>
-  <div class="step user" data-n="7" data-lane="ユーザー">確認に答える。</div>
-  <div class="step py" data-n="8" data-lane="Python">
-    鍵をかけ（別の片づけが動いていれば <code>busy</code>）、記録の形を確かめてから実行する。
-    <div class="branch"><b>上書き</b> → 後から来た資料で既存の原本を置き換える（履歴に <b>Overwrote</b>）。</div>
-    <div class="branch"><b>後続を削除</b> → 後から来た資料を消す（履歴に <b>Discarded</b>）。</div>
-    記録から外して鍵を外す。資料が一覧のあとで変わっていれば「同名の確認待ちではありません」を返す。
-  </div>
-  <div class="step claude" data-n="9" data-lane="Claude">
-    <div class="branch"><b>busy</b> → 約 30 秒待って 1 回だけやり直す。それでも busy なら保留のまま残して伝える。</div>
-    <div class="branch"><b>実行時のエラー</b>（開いたままなど）→ メッセージを伝える。その件は保留のまま。</div>
-    <div class="branch"><b>確認待ちではない</b> → その件を飛ばし、2 からやり直すよう伝える。</div>
-  </div>
-  <div class="step claude" data-n="10" data-lane="Claude">上書きが 1 件でもあれば、<a href="#reconcile">片づけの手順</a> を 1 回実行する（既存のノートが新しい中身で作り直される）。</div>
-  <div class="step claude" data-n="11" data-lane="Claude">上書き・削除・保留のままの件数と、上書きまたは削除した資料のフルパスを 1 行で報告する。<span class="tag stop">止まる</span></div>
-</div>
+<h2 id="conflict">8. 同名で中身が違う資料 <small>動かさず、報告する</small></h2>
+<p class="lead">片づけの途中で、行き先に同じ名前で中身が違う原本があると、資料は動かされずに元の場所（<code>00_inbox</code> か案件フォルダ直下）に残り、報告される。動かす・消すは、手か Claude への指示で行う。中身が同じときは、聞かずに置いた側が消える。</p>
 
 <!-- ============================================================ -->
 <h2 id="manual">9. 手で動かした・書き換えた・消したとき <small>次の片づけで追いつく</small></h2>
@@ -392,7 +355,7 @@
       <li>設定済み vault の計画ファイルの読み・書き・編集。手順書（片づけの判断手順）の読み取り。</li>
       <li>見張りの起動（変化の見張りのコマンドだけ）。</li>
     </ul>
-    通さないもの: 専用環境の作成、vault の設定、同名の確認待ちの解決（上書き・削除）。これらは確認が出る。
+    通さないもの: 専用環境の作成、vault の設定。これらは確認が出る。
   </div>
   <div class="step user" data-n="3" data-lane="ユーザー">一致しない操作だけ、普段どおり確認に答える。この許可は、プラグインが有効なすべてのセッションで常に効く。</div>
 </div>
@@ -408,7 +371,7 @@
   <tr><td>5. 見張り</td><td><code>skills/watch/SKILL.md</code></td><td><code>vault_kb/watch.py</code>（watch_events・snapshot）</td></tr>
   <tr><td>6. 見張りの終了</td><td><code>skills/unwatch/SKILL.md</code></td><td><code>vault_kb/watch.py</code>（request_stop・open_items）、<code>vault_kb/cli.py</code>（record-stop）</td></tr>
   <tr><td>7. 1 回の片づけ</td><td><code>skills/sweep/SKILL.md</code></td><td><code>vault_kb/watch.py</code>（status）</td></tr>
-  <tr><td>8. 同名の解決</td><td><code>skills/resolve/SKILL.md</code></td><td><code>vault_kb/conflict.py</code>（listing・resolve）、<code>vault_kb/cli.py</code>（resolve）</td></tr>
+  <tr><td>8. 同名で中身が違う資料</td><td><code>references/reconcile.md</code></td><td><code>vault_kb/reconcile.py</code>（_apply_item）</td></tr>
   <tr><td>9. 手で動かした</td><td>—</td><td><code>vault_kb/reconcile.py</code>（_follow_orphans・_detect_changes・_collect）</td></tr>
   <tr><td>10. 確認なし</td><td>—</td><td><code>hooks/hooks.json</code>（PreToolUse）、<code>run.py</code>（approve・UNATTENDED）</td></tr>
 </table>

@@ -19,4 +19,4 @@ compatibility: Windows 専用。Python 3.12〜3.14。
        python "${CLAUDE_PLUGIN_ROOT}/run.py" --data "${CLAUDE_PLUGIN_DATA}" status
 
    終了コード 3、または 2 で「未設定」とあるときは、「`/vault-kb:init` で初期設定をしてください」と案内して止まる。2 で「見つかりません」とあるときは、そのメッセージを伝えて止まる。
-4. 報告する: 片づけた件数（手順 2 の `filed`・`discarded`・`refreshed`）を 1 行で伝える。手順 3 で、`pending` が 1 以上なら残りの件数、`conflicts` が 1 以上なら同名の確認待ちの件数（`/vault-kb:resolve` で選べる）、`busy` が true なら別の片づけが進行中であることを添える。ないものは書かない。
+4. 報告する: 片づけた件数（手順 2 の `filed`・`discarded`・`refreshed`）を 1 行で伝える。手順 3 で、`pending` が 1 以上なら残りの件数、`busy` が true なら別の片づけが進行中であることを添える。ないものは書かない。

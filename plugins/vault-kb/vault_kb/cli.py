@@ -13,7 +13,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from . import bundle, conflict, lock, reconcile, watch
+from . import bundle, lock, reconcile, watch
 from .vault import (
     ConfigError,
     Vault,
@@ -47,10 +47,6 @@ def _parser() -> argparse.ArgumentParser:
     sub.add_parser("watch", help="vault の変化を 1 行ずつ出す（Ctrl+C か unwatch で終わる）")
     sub.add_parser("unwatch", help="見張りに停止の印を書き、確認事項を返す")
     sub.add_parser("record-stop", help="log.md に見張りの停止を記録する")
-    sub.add_parser("conflicts", help="同名の確認待ちの一覧（フルパス・サイズ・更新日時）")
-    resolve = sub.add_parser("resolve", help="同名の確認待ちを解決する")
-    resolve.add_argument("source", help="conflicts の source（vault からの相対パス）")
-    resolve.add_argument("action", choices=["overwrite", "discard"])
     return parser
 
 
@@ -145,18 +141,6 @@ def _run(args: argparse.Namespace, data_dir: Path) -> dict[str, Any] | list[Any]
         suffix = f"（未解消 {unresolved} 件）" if unresolved else ""
         bundle.append_log(vault, [f"**Stopped** 見張りを止めた{suffix}"], now)
         return {"recorded": True, "unresolved": unresolved}
-    if args.command == "conflicts":
-        return conflict.listing(vault)
-    if args.command == "resolve":
-        try:
-            lock.acquire(data_dir, now)
-        except lock.Busy:
-            return {"busy": True}
-        try:
-            bundle.append_log(vault, [conflict.resolve(vault, args.source, args.action)], now)
-        finally:
-            lock.release(data_dir, lock.token_of(now))
-        return {"resolved": args.action, "source": args.source}
     for line in watch.watch_events(vault, data_dir):  # watch
         print(line, flush=True)
     return None

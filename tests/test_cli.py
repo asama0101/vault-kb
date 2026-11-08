@@ -445,92 +445,9 @@ def test_unwatchが止めた見張りのプロセスはstoppedを出して終了
     assert (line, proc.returncode) == ("stopped\n", 0)
 
 
-def _hold(root, name="x.txt"):
-    """00_inbox/<name> と、先にある同名の原本を作り、保留の記録を書く。"""
-    from vault_kb import conflict
-    from vault_kb.vault import Vault
+def test_conflictsとresolveはサブコマンドにない():
+    from vault_kb import cli
 
-    incoming = root / "00_inbox" / name
-    existing = root / "20_projects" / "A社" / "01_見積" / name
-    existing.parent.mkdir(parents=True)
-    make_txt(existing, TEXT)
-    make_txt(incoming, TEXT + "別")
-    conflict.add(Vault(root), incoming, existing)
-    return incoming, existing
-
-
-def test_conflictsは保留の一覧をフルパス付きのJSONで返す(configured):
-    root, data = configured
-    incoming, existing = _hold(root)
-
-    result = kb(data, "conflicts")
-
-    assert result.returncode == 0
-    (item,) = json.loads(result.stdout)
-    assert (item["source"], item["source_path"]) == ("00_inbox/x.txt", str(incoming))
-    assert item["destination_path"] == str(existing)
-    assert not (data / "reconcile.lock").exists()
-
-
-def test_resolveのoverwriteは先を置き換えlogにOverwroteを足す(configured):
-    root, data = configured
-    incoming, existing = _hold(root)
-
-    result = kb(data, "resolve", "00_inbox/x.txt", "overwrite")
-
-    assert result.returncode == 0
-    assert json.loads(result.stdout) == {"resolved": "overwrite", "source": "00_inbox/x.txt"}
-    assert existing.read_text(encoding="utf-8") == TEXT + "別"
-    assert not incoming.exists()
-    assert f"**Overwrote** x.txt — 元: {incoming} / 先: {existing}" in (root / "log.md").read_text(
-        encoding="utf-8"
-    )
-    assert not (data / "reconcile.lock").exists()
-
-
-def test_resolveのdiscardは保留の資料を消しlogにDiscardedを足す(configured):
-    root, data = configured
-    incoming, existing = _hold(root)
-
-    result = kb(data, "resolve", "00_inbox/x.txt", "discard")
-
-    assert result.returncode == 0
-    assert existing.read_text(encoding="utf-8") == TEXT
-    assert not incoming.exists()
-    assert "**Discarded** x.txt（後続を削除）" in (root / "log.md").read_text(encoding="utf-8")
-
-
-def test_resolveは保留でない資料なら終了コード2(configured):
-    _, data = configured
-
-    result = kb(data, "resolve", "00_inbox/ない.txt", "discard")
-
-    assert result.returncode == 2
-    assert "同名の確認待ちではありません" in result.stderr
-
-
-def test_resolveは片づけが進行中ならbusyを返して何も動かさない(configured):
-    from datetime import datetime
-
-    from vault_kb.lock import acquire
-
-    root, data = configured
-    incoming, existing = _hold(root)
-    acquire(data, datetime.now().astimezone())
-
-    result = kb(data, "resolve", "00_inbox/x.txt", "overwrite")
-
-    assert result.returncode == 0
-    assert json.loads(result.stdout) == {"busy": True}
-    assert incoming.exists()
-    assert existing.read_text(encoding="utf-8") == TEXT
-
-
-def test_unwatchの確認事項に保留の件数が入る(configured):
-    root, data = configured
-    _hold(root)
-
-    report = json.loads(kb(data, "unwatch").stdout)
-
-    # 先の原本にはノートがないので、片づけ待ちが 1 件ある（未解消 = 片づけ待ち 1 + 保留 1）
-    assert (report["conflicts"], report["pending"], report["unresolved"]) == (1, 1, 2)
+    for argv in (["conflicts"], ["resolve", "x", "overwrite"]):
+        with pytest.raises(SystemExit):
+            cli._parser().parse_args(argv)

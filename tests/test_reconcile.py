@@ -668,6 +668,36 @@ def test_applyは同名で中身が同じならinbox側を消しDiscardedを書�
     ]
 
 
+def test_applyは同名で中身が違えばconflictを返し動かさず記録も作らない(vault, data_dir):
+    existing = register(vault, "A社", "01_見積", "x.txt")
+    make_txt(vault.root / "00_inbox" / "x.txt", TEXT + "別")
+    result = run_apply(vault, data_dir, {})
+    assert result["results"] == [
+        {
+            "source": "00_inbox/x.txt",
+            "status": "conflict",
+            "note": None,
+            "message": None,
+            "original": str(existing),
+        }
+    ]
+    assert (vault.root / "00_inbox" / "x.txt").exists()
+    assert existing.read_text(encoding="utf-8") == TEXT
+    assert not (vault.root / ".vault-kb-conflicts.json").exists()
+
+
+def test_旧版の保留の記録が残っていても無視され_inboxの資料は毎回prepareに出る(vault, data_dir):
+    make_txt(vault.root / "00_inbox" / "x.txt", TEXT)
+    (vault.root / ".vault-kb-conflicts.json").write_text(
+        '[{"source": "00_inbox/x.txt", "destination": "...", "size": 1, "mtime_ns": 1}]',
+        encoding="utf-8",
+    )
+    for _ in range(2):
+        result = prepare(vault, data_dir, NOW)
+        assert [item["source"] for item in result["items"]] == ["00_inbox/x.txt"]
+        release(data_dir)
+
+
 def test_applyはunregisteredの原本を動かさずノートだけ書く(vault, data_dir):
     folder = vault.root / "20_projects" / "A社" / "01_見積"
     folder.mkdir(parents=True)

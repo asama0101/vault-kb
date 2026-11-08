@@ -8,7 +8,7 @@ from datetime import date, datetime
 from pathlib import Path, PurePosixPath
 from typing import Any
 
-from . import bundle, conflict, convert
+from . import bundle, convert
 from .lock import acquire, owns, release, token_of
 from .vault import (
     ARCHIVE_NAME,
@@ -574,7 +574,6 @@ def _apply_item(
                     "message": None,
                     "original": str(original),
                 }, line
-            conflict.add(vault, source, original)  # 同名・別内容は、動かさず利用者の選択を待つ
             return {
                 "source": item["source"],
                 "status": "conflict",

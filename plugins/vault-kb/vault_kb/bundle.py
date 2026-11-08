@@ -11,7 +11,6 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
-from vault_kb import conflict
 from vault_kb.vault import (
     ARCHIVE_NAME,
     INBOX_NAME,
@@ -247,17 +246,15 @@ def inbox_files(vault: Vault) -> list[Path]:
     if not inbox.is_dir() or is_link(inbox):
         return []
     _, files = _shallow(inbox)
-    held = conflict.held_sources(vault)
-    return sorted(f for f in files if is_original_file(f) and f not in held)
+    return sorted(f for f in files if is_original_file(f))
 
 
 def project_root_files(vault: Vault) -> list[tuple[str, Path]]:
     """案件フォルダ直下のファイル（無視する名前を除く）。"""
     found = []
-    held = conflict.held_sources(vault)
     for project, folder in vault.project_folders():
         _, files = _shallow(folder)
-        found += [(project, f) for f in sorted(files) if is_original_file(f) and f not in held]
+        found += [(project, f) for f in sorted(files) if is_original_file(f)]
     return found
 
 

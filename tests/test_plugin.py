@@ -21,11 +21,10 @@ def frontmatter(path: Path) -> dict[str, str]:
     return dict(line.split(": ", 1) for line in head.splitlines() if ": " in line)
 
 
-def test_スキルは6つあり_nameがディレクトリ名と一致する():
+def test_スキルは5つあり_nameがディレクトリ名と一致する():
     assert [p.parent.name for p in SKILLS] == [
         "ask",
         "init",
-        "resolve",
         "sweep",
         "unwatch",
         "watch",
@@ -36,8 +35,19 @@ def test_スキルは6つあり_nameがディレクトリ名と一致する():
         assert meta["description"]
 
 
-def test_init_resolve_sweep_unwatch_watchだけが自動起動を禁止している():
-    for name in ("init", "resolve", "sweep", "unwatch", "watch"):
+def test_resolveスキルはない():
+    assert not (PLUGIN / "skills" / "resolve").exists()
+
+
+def test_手順書は同名のconflictだけの結果で繰り返さない():
+    text = REFERENCES.read_text(encoding="utf-8")
+
+    assert "（`filed`・`refreshed`・`discarded`）が 1 件以上" in text
+    assert "`discarded`・`conflict`）" not in text
+
+
+def test_init_sweep_unwatch_watchだけが自動起動を禁止している():
+    for name in ("init", "sweep", "unwatch", "watch"):
         assert frontmatter(PLUGIN / f"skills/{name}/SKILL.md")["disable-model-invocation"] == "true"
     assert "disable-model-invocation" not in frontmatter(PLUGIN / "skills/ask/SKILL.md")
 
@@ -52,10 +62,9 @@ def test_askは状態確認と片づけとロックの解除だけを承認な�
     assert allowed_commands("ask") == ["status", "prepare", "apply *", "release"]
 
 
-def test_watchは片づけのコマンドとMonitorだけを許可しresolveを承認なしで通さない():
+def test_watchは片づけのコマンドとMonitorだけを許可する():
     tools = frontmatter(PLUGIN / "skills/watch/SKILL.md")["allowed-tools"].split()
 
-    # resolve は上書き・削除をするので、資料の本文に誘導されても、承認なしで実行されないように
     assert allowed_commands("watch") == ["prepare", "apply *", "release"]
     assert "Monitor" in tools
 
@@ -63,11 +72,6 @@ def test_watchは片づけのコマンドとMonitorだけを許可しresolveを�
 def test_sweepは状態確認と片づけのコマンドだけを承認なしで許可する():
     # unwatch は動いている見張りを止めるので、sweep には許可しない
     assert allowed_commands("sweep") == ["status", "prepare", "apply *", "release"]
-
-
-def test_resolveは一覧と片づけのコマンドだけを承認なしで許可し_resolve自体は許可しない():
-    # resolve（上書き・削除）は戻せないので、承認なしの許可に含めない（実行のたびに確認が出る）
-    assert allowed_commands("resolve") == ["conflicts", "prepare", "apply *", "release"]
 
 
 def test_unwatchは停止と片づけと確認事項のコマンドだけを承認なしで許可する():
@@ -108,10 +112,6 @@ def test_askの読み取りはvault_kb配下に限定する():
             "unwatch",
             ["Read(//**/vault-kb/.vault-kb-plan.json)", "Read(//**/references/reconcile.md)"],
         ),
-        (
-            "resolve",
-            ["Read(//**/vault-kb/.vault-kb-plan.json)", "Read(//**/references/reconcile.md)"],
-        ),
     ],
 )
 def test_Readの許可は決まった範囲だけで_括弧なしのツールを持たない(name, expected):
@@ -130,7 +130,7 @@ def test_initは診断と状態だけを承認なしで許可しSendMessageとLi
     assert "ListAgents" not in tools
 
 
-@pytest.mark.parametrize("name", ["ask", "resolve", "sweep", "unwatch", "watch"])
+@pytest.mark.parametrize("name", ["ask", "sweep", "unwatch", "watch"])
 def test_計画の書き込みはvault_kbの隠しファイルの計画だけを許可する(name):
     tools = frontmatter(PLUGIN / f"skills/{name}/SKILL.md")["allowed-tools"]
 
@@ -140,8 +140,8 @@ def test_計画の書き込みはvault_kbの隠しファイルの計画だけを
     ]
 
 
-@pytest.mark.parametrize("name", ["ask", "resolve", "sweep", "unwatch", "watch"])
-def test_watchとaskとunwatchとresolveはreferencesのreconcileを読む(name):
+@pytest.mark.parametrize("name", ["ask", "sweep", "unwatch", "watch"])
+def test_watchとaskとunwatchとsweepはreferencesのreconcileを読む(name):
     text = (PLUGIN / f"skills/{name}/SKILL.md").read_text(encoding="utf-8")
 
     assert "${CLAUDE_PLUGIN_ROOT}/references/reconcile.md" in text
