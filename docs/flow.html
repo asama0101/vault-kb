@@ -88,7 +88,7 @@
 <nav>
 <ol>
   <li><a href="#init">初回導入（<code>/vault-kb:init</code>）</a></li>
-  <li><a href="#start">Claude Code を開いたとき（通知）</a></li>
+  <li><a href="#start">Claude Code を開いたとき（廃止）</a></li>
   <li><a href="#ask">資料を置いて質問する（<code>/vault-kb:ask</code>）</a></li>
   <li><a href="#reconcile">片づけの手順（共通）</a></li>
   <li><a href="#watch">見張りを始める（<code>/vault-kb:watch</code>）</a></li>
@@ -137,19 +137,8 @@
 </div>
 
 <!-- ============================================================ -->
-<h2 id="start">2. Claude Code を開いたとき <small>通知だけ。片づけはしない</small></h2>
-<div class="flow">
-  <div class="head">ユーザー</div><div class="head">Claude</div><div class="head">裏方の処理（Python）</div>
-  <div class="step user" data-n="1" data-lane="ユーザー">Claude Code を開く（どのフォルダでもよい）。</div>
-  <div class="step py" data-n="2" data-lane="Python">
-    自動で 1 回だけ、状態を調べて 1 行を出す。
-    <div class="branch"><b>未設定</b> → 「/vault-kb:init で設定してください」</div>
-    <div class="branch"><b>片づけ待ちあり</b> → 「片づけ待ちが N 件あります（/vault-kb:sweep・/vault-kb:watch・/vault-kb:ask で片づきます）」</div>
-    <div class="branch"><b>片づけ待ちなし</b> → 何も出さない。</div>
-    <div class="branch"><b>vault が見えない</b>（外付け・同期の切断）→ その旨を出す。</div>
-  </div>
-  <div class="step claude" data-n="3" data-lane="Claude">通知を会話に挟むだけ。片づけは始めない。</div>
-</div>
+<h2 id="start">2. Claude Code を開いたとき <small>廃止</small></h2>
+<p class="note">起動時の通知は廃止した。開いただけでは何も起きない。取り残しは、次の見張りか質問で片づく。</p>
 <p class="note">「片づけ待ち」の数え方: <code>00_inbox</code> 直下の資料 ＋ 案件フォルダ直下の資料 ＋ 区分フォルダに手で置かれたノートのない資料 ＋ 原本がなくなったノート ＋ 原本のサイズか更新時刻が変わった資料。</p>
 
 <!-- ============================================================ -->

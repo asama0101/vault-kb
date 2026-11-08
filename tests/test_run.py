@@ -166,14 +166,13 @@ def test_委譲したコマンドの結果と終了コードがそのまま返�
     vault_dir.mkdir()
 
     configured = run("configure", "--vault", str(vault_dir), "--data", str(data))
-    notified = run("status", "--data", str(data))
+    status_result = run("status", "--data", str(data))
     failed = run("nosuch", "--data", str(data))
 
     assert configured.returncode == 0, configured.stderr
     assert json.loads(configured.stdout) == {"vault": str(vault_dir)}
-    assert notified.returncode == 0
-    assert notified.stderr == ""
-    assert "未設定" not in notified.stdout  # 見張りの案内は claude の有無で変わる
+    assert status_result.returncode == 0
+    assert status_result.stderr == ""
     assert failed.returncode == 2
     assert "invalid choice" in failed.stderr
 
