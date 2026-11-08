@@ -187,7 +187,7 @@ class Vault:
         found = []
         for name in PROJECT_ROOTS:
             folder = self.root / name
-            if folder.is_dir():
+            if folder.is_dir() and not is_link(folder):  # リンクの先は vault の外のことがある
                 children = sorted(folder.iterdir())
                 found += [
                     (f.name, f)

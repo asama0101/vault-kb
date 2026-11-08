@@ -191,6 +191,29 @@ def test_releaseはロックを解く(configured):
     assert not (data / "reconcile.lock").exists()
 
 
+def test_releaseは計画の持ち主の印が違えば_他の実行が引き継いだロックを解かない(configured):
+    root, data = configured
+    data.joinpath("reconcile.lock").write_text("2026-11-08T12:16:00+00:00", encoding="utf-8")  # B
+    plan = root / ".vault-kb-plan.json"
+    plan.write_text(json.dumps({"lock_token": "2026-11-08T12:00:00+00:00"}), encoding="utf-8")  # A
+
+    result = kb(data, "release")
+
+    assert json.loads(result.stdout) == {"released": True}
+    assert (data / "reconcile.lock").exists()
+
+
+def test_releaseは計画の持ち主の印が同じなら解く(configured):
+    root, data = configured
+    data.joinpath("reconcile.lock").write_text("2026-11-08T12:00:00+00:00", encoding="utf-8")
+    plan = root / ".vault-kb-plan.json"
+    plan.write_text(json.dumps({"lock_token": "2026-11-08T12:00:00+00:00"}), encoding="utf-8")
+
+    kb(data, "release")
+
+    assert not (data / "reconcile.lock").exists()
+
+
 def test_reindexは索引を作り直す(configured):
     root, data = configured
     (root / "index.md").unlink()

@@ -1128,6 +1128,78 @@ def test_移動先の案件か区分がリンクならerrorで原本は動かな
     assert list(outside.iterdir()) == []
 
 
+def test_releaseは持ち主の印が違えば_他の実行が取り直したロックを解かない(data_dir):
+    acquire(data_dir, NOW)  # 実行 A
+    later = NOW + timedelta(minutes=16)
+    acquire(data_dir, later)  # 実行 B が、失効した A のロックを引き継ぐ
+
+    release(data_dir, NOW.isoformat())  # A が終わる
+
+    assert (data_dir / "reconcile.lock").read_text(encoding="utf-8") == later.isoformat()
+    release(data_dir, later.isoformat())
+    assert not (data_dir / "reconcile.lock").exists()
+
+
+def test_applyは別の実行が引き継いだロックとstagingと計画ファイルに触れない(vault, data_dir):
+    make_txt(vault.root / "00_inbox" / "x.txt", TEXT)
+    first = prepare(vault, data_dir, NOW)  # 実行 A
+    later = NOW + timedelta(minutes=16)
+    second = prepare(vault, data_dir, later)  # 実行 B が、失効したロックを引き継ぐ
+    assert second["items"]
+    assert first["lock_token"] != second["lock_token"]
+    other_plan = vault.root / PLAN_NAME
+    other_plan.write_text("B の計画", encoding="utf-8")
+    plan = {
+        "lock_token": first["lock_token"],
+        "items": [plan_item(i["source"], kind=i["kind"]) for i in first["items"]],
+    }
+
+    result = apply(vault, data_dir, plan, later + timedelta(minutes=1))  # A の apply
+
+    assert [r["status"] for r in result["results"]] == ["filed"]
+    assert (data_dir / "reconcile.lock").read_text(encoding="utf-8") == later.isoformat()
+    assert (data_dir / "staging").is_dir()
+    assert other_plan.read_text(encoding="utf-8") == "B の計画"
+
+
+def test_applyは自分のロックの印なら_ロックとstagingと計画ファイルを片づける(vault, data_dir):
+    make_txt(vault.root / "00_inbox" / "x.txt", TEXT)
+    first = prepare(vault, data_dir, NOW)
+    (vault.root / PLAN_NAME).write_text("計画", encoding="utf-8")
+    plan = {
+        "lock_token": first["lock_token"],
+        "items": [plan_item(i["source"], kind=i["kind"]) for i in first["items"]],
+    }
+
+    apply(vault, data_dir, plan, NOW)
+
+    assert not (data_dir / "reconcile.lock").exists()
+    assert not (data_dir / "staging").exists()
+    assert not (vault.root / PLAN_NAME).exists()
+
+
+def test_applyはlock_tokenが文字列でなければValueError(vault, data_dir):
+    with pytest.raises(ValueError, match="lock_token"):
+        apply(vault, data_dir, {"items": [], "lock_token": 1}, NOW)
+
+
+@pytest.mark.parametrize("root", ["20_projects", "80_archive"])
+def test_案件の根自体がリンクなら_先の資料を走査も変換もしない(vault, data_dir, tmp_path, root):
+    outside = tmp_path / "外"
+    (outside / "P" / "01_x").mkdir(parents=True)
+    (outside / "shared").mkdir()  # 予約名。先を読むと「消してください」の警告が出てしまう
+    make_txt(outside / "P" / "01_x" / "secret.txt", TEXT)
+    (vault.root / root).rmdir()
+    junction(vault.root / root, outside)
+
+    result = prepare(vault, data_dir, NOW)
+
+    assert result["items"] == []
+    assert result["errors"] == []
+    assert len(result["warnings"]) == 1  # リンクのため走査しない、という知らせだけ
+    assert result["warnings"][0].startswith(f"{root} はリンクのため走査していません")
+
+
 def test_新しい案件には99_その他も作り_区分その他はそこに置く(vault, data_dir):
     make_txt(vault.root / "00_inbox" / "a.txt", TEXT)
     make_txt(vault.root / "00_inbox" / "b.txt", TEXT + "別")

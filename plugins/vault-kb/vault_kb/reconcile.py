@@ -9,7 +9,7 @@ from pathlib import Path, PurePosixPath
 from typing import Any
 
 from . import bundle, conflict, convert
-from .lock import acquire, release
+from .lock import acquire, owns, release, token_of
 from .vault import (
     ARCHIVE_NAME,
     DEFAULT_CATEGORY,
@@ -330,10 +330,15 @@ def _collect(
 
 
 def _warnings(vault: Vault) -> list[str]:
-    """案件フォルダが予約名（shared・knowledge）と衝突しているときの警告。"""
+    """案件の根がリンクで走査していないとき、案件フォルダが予約名（shared・knowledge）と衝突するときの警告。"""
     found = []
     for root in PROJECT_ROOTS:
         folder = vault.root / root
+        if is_link(folder):  # 先は vault の外のことがある。読まずに知らせる
+            found.append(
+                f"{root} はリンクのため走査していません（リンクの先は案件として扱いません）"
+            )
+            continue
         if not folder.is_dir():
             continue
         for child in sorted(folder.iterdir()):
@@ -357,11 +362,13 @@ def _prepare(vault: Vault, data_dir: Path, now: datetime) -> dict[str, Any]:
     finally:
         if done:
             bundle.append_log(vault, done, now)
+    token = token_of(now)
     if not items:
         bundle.write_indexes(vault)
-        release(data_dir)
+        release(data_dir, token)
     return {
         "vault": str(vault.root),
+        "lock_token": token,  # 計画に書き写す（apply が、自分のロックだけを解くため）
         "items": items,
         "more": more,
         "context": _context(vault),
@@ -381,7 +388,7 @@ def prepare(vault: Vault, data_dir: Path, now: datetime) -> dict[str, Any]:
     try:
         return _prepare(vault, data_dir, now)
     except BaseException:
-        release(data_dir)
+        release(data_dir, token_of(now))
         raise
 
 
@@ -621,10 +628,18 @@ def apply(vault: Vault, data_dir: Path, plan: dict[str, Any], now: datetime) -> 
     """計画どおりに資料を置いてノートを書き、索引・ログを直してロックと staging を片づける。
 
     計画の形が不正なら ValueError（何も実行しない。ロックは残す）。1 件の失敗は error にして続ける。
+    計画の lock_token（prepare が返した値）が、いまのロックの持ち主の印と違うときは、別の実行が
+    ロックを引き継いでいる。その実行の作業を壊さないよう、ロック・staging・計画ファイルに触れない。
+    限界: lock_token は Claude が計画に書き写す。書き落とした計画は従来どおり無条件に片づける
+    （この保護が効かないだけで、以前より悪くはならない）。書き間違えると、片づけが残って
+    次の prepare が最長 15 分 busy になる。
     """
     items = plan.get("items") if isinstance(plan, dict) else None
     if not isinstance(items, list):
         raise ValueError("計画に items（配列）がありません")
+    token = plan.get("lock_token")
+    if token is not None and not isinstance(token, str):
+        raise ValueError("lock_token は文字列にしてください")
     for item in items:
         _check_plan_item(item)
     results: list[Item] = []
@@ -642,23 +657,32 @@ def apply(vault: Vault, data_dir: Path, plan: dict[str, Any], now: datetime) -> 
                 if line:
                     done.append(line)
     except BaseException:
-        _finish(vault, data_dir, done, now)  # 本体の例外を隠さない
+        _finish(vault, data_dir, done, now, token)  # 本体の例外を隠さない
         raise
-    failure = _finish(vault, data_dir, done, now)
+    failure = _finish(vault, data_dir, done, now, token)
     if failure:
         raise failure
     return {"results": results, "done": done}
 
 
-def _finish(vault: Vault, data_dir: Path, done: list[str], now: datetime) -> OSError | None:
-    """ログ・索引・ロック・staging・計画ファイルの後始末。各段は独立で、最初の失敗を返す。"""
+def _finish(
+    vault: Vault, data_dir: Path, done: list[str], now: datetime, token: str | None
+) -> OSError | None:
+    """ログ・索引・ロック・staging・計画ファイルの後始末。各段は独立で、最初の失敗を返す。
+
+    ロックを別の実行が引き継いでいるとき（token が違う）は、ログと索引だけを直す。
+    """
+    mine = owns(data_dir, token)  # release の前に確かめる
     steps = [
         lambda: bundle.append_log(vault, done, now) if done else None,
         lambda: bundle.write_indexes(vault),
-        lambda: release(data_dir),
-        lambda: shutil.rmtree(data_dir / "staging", ignore_errors=True),
-        lambda: (vault.root / PLAN_NAME).unlink(missing_ok=True),
     ]
+    if mine:
+        steps += [
+            lambda: release(data_dir, token),
+            lambda: shutil.rmtree(data_dir / "staging", ignore_errors=True),
+            lambda: (vault.root / PLAN_NAME).unlink(missing_ok=True),
+        ]
     failure = None
     for step in steps:
         try:
