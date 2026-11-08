@@ -234,7 +234,7 @@ def test_テンプレートの置き場がリンクのときはリンク先へ�
     install_obsidian_assets(root)
 
     assert list(outside.iterdir()) == []
-    assert (root / "92_bases" / "その日のノート.base").is_file()
+    assert not (root / "92_bases").exists()
 
 
 def _broken_junction(link, tmp_path):
@@ -263,7 +263,7 @@ def test_テンプレートの置き場が壊れたリンクでも落ちず他�
 
     install_obsidian_assets(root)
 
-    assert (root / "92_bases" / "その日のノート.base").is_file()
+    assert not (root / "92_bases").exists()
 
 
 @pytest.mark.parametrize(

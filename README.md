@@ -27,7 +27,6 @@ Claude Code と Obsidian を使う人向けのプラグイン。Obsidian の vau
 - Python が 3.12 より古い、または 3.15 以降だと、固定したバージョンのライブラリが入らない。
 - ライブラリは markitdown とその依存で、バージョンは固定してある。`/vault-kb:init` が入れるので、手で入れなくてよい。出典とライセンスは [NOTICE](plugins/vault-kb/NOTICE) にある。
 - vault の名前が `vault-kb` でないと、`/vault-kb:ask` と `/vault-kb:watch` の読み取りと、計画ファイル（片づけの内容を書く一時ファイル）の編集に、許可の確認が出る。
-- テンプレートの Base を使うには、Obsidian のコアプラグイン「ベース」が要る。「ベース」は Obsidian 1.9 以降で使えると思われる（未検証）。
 
 ### 使う前に知っておくこと
 
@@ -54,7 +53,7 @@ Claude Code と Obsidian を使う人向けのプラグイン。Obsidian の vau
 2. 専用環境（ライブラリを入れる Python 環境）がなければ、作る。入れ先は選べる（次の表）。承認を求められる。
 3. vault のパス（`vault-kb` フォルダ）を、絶対パスで聞く。
 4. vault の中に、[フォルダ構成](#フォルダ構成)のとおりフォルダを作る。
-5. `91_templates` にノートのテンプレート 7 種類、`92_bases` に Base（`その日のノート.base`）を置く。同名のファイルがあれば、上書きしない。
+5. `91_templates` にノートのテンプレート 7 種類を置く。同名のファイルがあれば、上書きしない。
 6. もう一度診断して、vault のパスと片づけ待ちの件数を報告する。
 
 ### ライブラリの入れ先
@@ -214,7 +213,7 @@ claude plugin uninstall vault-kb@vault-kb
 - 案件は `20_projects`・`80_archive` 直下のフォルダ、区分はその下のフォルダ。`30_shared`（案件名 `shared`）と `40_knowledge`（案件名 `knowledge`）は案件に属さない資料で、直下が区分になる。
 - `40_knowledge` の直下に置いたファイルは、片づけで区分のフォルダへ動く。既存の `40_knowledge` の中身も、最初の片づけで一括で区分に分かれる。
 - 区分は `01_見積` のように番号つきで、`99_その他` はどの案件にもある。番号なしの区分フォルダも、そのまま受け入れる。
-- `10_daily`・`50_prompts`・`90_attachments`・`91_templates`・`92_bases` は、利用者のフォルダ。動かさず、ノートも作らず、`/vault-kb:ask` の検索にも入らない。
+- `10_daily`・`50_prompts`・`90_attachments`・`91_templates` は、利用者のフォルダ。動かさず、ノートも作らず、`/vault-kb:ask` の検索にも入らない。
 - ノートの先頭の項目欄（frontmatter）に、案件・区分・取引先・種類・日付・要約が入る。
 - `.notes/` は隠しフォルダ。見るには、エクスプローラーで「隠しファイルを表示」をオンにする。Obsidian には表示されず、検索にも出ない。
 - 案件・区分の `index.md` は `.notes/` の中にあり、片づけのたびに作り直される。根の `index.md` と `log.md` は、vault の直下にある。
@@ -225,13 +224,13 @@ claude plugin uninstall vault-kb@vault-kb
 |---|---|---|
 | 原本の移動・編集・削除 | 可 | ノートが追従する |
 | `20_projects/<案件>/<区分>/` への新しい原本の追加 | 可 | ノートができる |
-| `10_daily`・`50_prompts`・`90_attachments`・`91_templates`・`92_bases` | 可 | 利用者のもの |
+| `10_daily`・`50_prompts`・`90_attachments`・`91_templates` | 可 | 利用者のもの |
 | ノート（`.notes/` の中の `<原本>.md`） | 触らない | 手の編集は消える |
 | `index.md`（`.notes/` の中と根） | 触らない | 編集は消える |
 | `log.md` | 触らない | 90 日より古い日付の見出しは、その下の追記ごと消える |
 
 - 原本を編集するとノートが作り直され、削除するとノートも消える（原本を戻せば作り直される）。
-- `91_templates`・`92_bases` に同名のファイルがあっても、`/vault-kb:init` は上書きしない。
+- `91_templates` に同名のファイルがあっても、`/vault-kb:init` は上書きしない。
 
 ## 設定
 
@@ -246,8 +245,6 @@ claude plugin uninstall vault-kb@vault-kb
 | コアプラグイン「テンプレート」のテンプレートフォルダの場所 | `91_templates` |
 | コアプラグイン「デイリーノート」の新規ファイルの場所 | `10_daily` |
 | 「ファイルとリンク」の新規添付ファイルの作成場所 | `90_attachments` |
-
-`91_templates/デイリーノート.md` が埋め込む `92_bases/その日のノート.base` には、コアプラグイン「ベース」の有効化が要る。
 
 ## 困ったとき
 

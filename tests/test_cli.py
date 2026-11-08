@@ -65,31 +65,39 @@ def test_configureはvault直下に土台のフォルダとindex_mdとlog_mdを�
     assert check_bundle(base) == []
 
 
-def test_configureはtemplatesに7種類のテンプレートとbasesにBaseを置く(configured):
+def test_configureはtemplatesに7種類のテンプレートだけを置く(configured):
     root, _ = configured
 
     assert sorted(p.name for p in (root / "91_templates").iterdir()) == sorted(TEMPLATES)
-    assert [p.name for p in (root / "92_bases").iterdir()] == ["その日のノート.base"]
+    assert not (root / "92_bases").exists()
     for name in TEMPLATES:
         text = (root / "91_templates" / name).read_text(encoding="utf-8")
         assert text.startswith(f"---\ncreated: {{{{date:YYYY-MM-DD}}}}\ntype: {name[:-3]}\n---\n")
-    base = (root / "92_bases" / "その日のノート.base").read_text(encoding="utf-8")
-    assert 'file.ctime.format("YYYY-MM-DD") == this.file.name' in base
+    assert ".base" not in (root / "91_templates" / "デイリーノート.md").read_text(encoding="utf-8")
 
 
 def test_configureは同名の既存ファイルを上書きせず他のテンプレートは置く(tmp_path):
     root = tmp_path / "v"
     (root / "91_templates").mkdir(parents=True)
     (root / "91_templates" / "議事録.md").write_text("自分の議事録", encoding="utf-8")
-    (root / "92_bases").mkdir()
-    (root / "92_bases" / "その日のノート.base").write_text("自分の base", encoding="utf-8")
 
     result = kb(tmp_path / "data", "configure", "--vault", str(root))
 
     assert result.returncode == 0, result.stderr
     assert (root / "91_templates" / "議事録.md").read_text(encoding="utf-8") == "自分の議事録"
-    assert (root / "92_bases" / "その日のノート.base").read_text(encoding="utf-8") == "自分の base"
     assert (root / "91_templates" / "ノウハウ.md").is_file()
+
+
+def test_旧版の92_basesが残っていても_configureは触らない(tmp_path):
+    root = tmp_path / "v"
+    (root / "92_bases").mkdir(parents=True)
+    (root / "92_bases" / "その日のノート.base").write_text("自分の base", encoding="utf-8")
+
+    result = kb(tmp_path / "data", "configure", "--vault", str(root))
+
+    assert result.returncode == 0, result.stderr
+    assert [p.name for p in (root / "92_bases").iterdir()] == ["その日のノート.base"]
+    assert (root / "92_bases" / "その日のノート.base").read_text(encoding="utf-8") == "自分の base"
 
 
 def test_テンプレートを区分に置いてもノートと見なされない(configured):

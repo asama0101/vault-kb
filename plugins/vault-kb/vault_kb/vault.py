@@ -22,10 +22,9 @@ KNOWLEDGE_NAME = "40_knowledge"  # 案件に属さないノウハウ。<区分>/
 KNOWLEDGE_PROJECT = "knowledge"  # 40_knowledge の案件名
 PROJECT_ROOTS = (PROJECTS_NAME, ARCHIVE_NAME)
 USER_FOLDERS = ("10_daily", "50_prompts", "90_attachments")  # 利用者の領域
-OBSIDIAN_ASSETS = Path(__file__).resolve().parent.parent / "obsidian"  # テンプレートと Base の原本
+OBSIDIAN_ASSETS = Path(__file__).resolve().parent.parent / "obsidian"  # テンプレートの原本
 ASSET_FOLDERS = {
     "templates": "91_templates",
-    "bases": "92_bases",
 }  # 原本のフォルダ → vault 内の名前
 DEFAULT_CATEGORY = "99_その他"
 OKF_VERSION = "0.2"
@@ -244,7 +243,7 @@ def init_vault(root: Path) -> Vault:
 
 
 def install_obsidian_assets(root: Path) -> None:
-    """同梱のテンプレートと Base を vault の 91_templates/・92_bases/ に置く（既存は残す）。"""
+    """同梱のテンプレートを vault の 91_templates/ に置く（既存は残す）。"""
     for source in sorted(OBSIDIAN_ASSETS.glob("*/*")):
         target = root / ASSET_FOLDERS[source.parent.name] / source.name
         if is_link(target.parent):

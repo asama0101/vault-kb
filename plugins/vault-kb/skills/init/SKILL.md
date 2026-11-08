@@ -27,7 +27,7 @@ compatibility: Windows 専用。Python 3.12〜3.14。
 3. vault を確かめる: `status` を実行する。
    - 終了コード 0: 設定済み。`vault` のパスを示して、変更したいかを聞く。変更しないなら手順 5 へ。
    - 終了コード 2（未設定）、または変更したいとき: 手順 4 へ。
-4. vault を設定する: 利用者に、vault（Obsidian で開く `vault-kb` フォルダ）の絶対パスを聞く。フォルダがなければ、パスの確認を求める。フォルダの名前が `vault-kb` でないと、`ask` と `watch` の読み取りと計画ファイルの編集に、許可の確認が出ることを伝える。`configure --vault "<パス>"` を実行する。vault の中に、`00_inbox/`・`10_daily/`・`20_projects/`・`30_shared/99_その他/`・`40_knowledge/99_その他/`・`50_prompts/`・`80_archive/`・`90_attachments/`・`index.md`・`log.md` が作られ、`91_templates/`（ノートのテンプレート 7 種類）と `92_bases/`（その日のノート.base）に、同名のファイルがなければ置かれる（既存は上書きしない）。vault を変えるときは、前の vault のファイルは動かないことを伝える。
+4. vault を設定する: 利用者に、vault（Obsidian で開く `vault-kb` フォルダ）の絶対パスを聞く。フォルダがなければ、パスの確認を求める。フォルダの名前が `vault-kb` でないと、`ask` と `watch` の読み取りと計画ファイルの編集に、許可の確認が出ることを伝える。`configure --vault "<パス>"` を実行する。vault の中に、`00_inbox/`・`10_daily/`・`20_projects/`・`30_shared/99_その他/`・`40_knowledge/99_その他/`・`50_prompts/`・`80_archive/`・`90_attachments/`・`index.md`・`log.md` が作られ、`91_templates/`（ノートのテンプレート 7 種類）に、同名のファイルがなければ置かれる（既存は上書きしない）。vault を変えるときは、前の vault のファイルは動かないことを伝える。
 5. 動作を確かめる: `doctor` と `status` を実行し、結果（`vault` のパス、`pending`）を報告する。
 6. 使い方を案内する。
    - 資料は `vault` の `00_inbox` フォルダに置く。完了した案件は、`20_projects` から `80_archive` へ、エクスプローラーか Obsidian で動かす。
