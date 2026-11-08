@@ -12,6 +12,7 @@ import unicodedata
 from dataclasses import dataclass
 from pathlib import Path
 
+WIKI_NAME = ".wiki"  # wiki のページを置く隠しフォルダ（vault の直下）
 NOTES_NAME = ".notes"  # ノートと案件・区分の index.md を置く隠しフォルダ（vault の直下）
 INBOX_NAME = "00_inbox"  # 仕分け前の資料を置くフォルダ
 PROJECTS_NAME = "20_projects"  # <案件>/<区分>/<原本>
@@ -198,22 +199,35 @@ class Vault:
         """原本のノートの置き場所（notes_dir の下に、原本と同じ相対パス + .md）。"""
         return self.notes_dir / f"{original.relative_to(self.root).as_posix()}.md"
 
+    @property
+    def wiki_dir(self) -> Path:
+        return self.root / WIKI_NAME
+
     def hide_notes_dir(self) -> None:
         """notes_dir を作り、Windows の隠し属性を付ける（エクスプローラーで隠す）。"""
-        self.notes_dir.mkdir(parents=True, exist_ok=True)
-        if sys.platform == "win32":
-            import ctypes
+        _make_hidden_dir(self.notes_dir)
 
-            kernel32 = ctypes.windll.kernel32
-            attributes = kernel32.GetFileAttributesW(str(self.notes_dir))
-            if attributes != -1 and not attributes & _HIDDEN_ATTRIBUTE:
-                kernel32.SetFileAttributesW(str(self.notes_dir), attributes | _HIDDEN_ATTRIBUTE)
+    def hide_wiki_dir(self) -> None:
+        """wiki_dir を作り、Windows の隠し属性を付ける（エクスプローラーで隠す）。"""
+        _make_hidden_dir(self.wiki_dir)
 
     def rel(self, path: Path) -> str:
         return path.relative_to(self.root).as_posix()
 
     def path(self, rel: str) -> Path:
         return self.root / rel
+
+
+def _make_hidden_dir(folder: Path) -> None:
+    """folder を作り、Windows の隠し属性を付ける。付いていれば何もしない。"""
+    folder.mkdir(parents=True, exist_ok=True)
+    if sys.platform == "win32":
+        import ctypes
+
+        kernel32 = ctypes.windll.kernel32
+        attributes = kernel32.GetFileAttributesW(str(folder))
+        if attributes != -1 and not attributes & _HIDDEN_ATTRIBUTE:
+            kernel32.SetFileAttributesW(str(folder), attributes | _HIDDEN_ATTRIBUTE)
 
 
 def init_vault(root: Path) -> Vault:

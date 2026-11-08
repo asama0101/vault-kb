@@ -207,6 +207,16 @@ def test_hide_notes_dirはnotes_dirを作り隠し属性を付け_2回目も壊�
     assert not vault.root.stat().st_file_attributes & stat.FILE_ATTRIBUTE_HIDDEN
 
 
+def test_hide_wiki_dirはwiki_dirを作り隠し属性を付け_2回目も壊さない(vault):
+    vault.hide_wiki_dir()
+    vault.hide_wiki_dir()
+
+    assert vault.wiki_dir == vault.root / ".wiki"
+    assert vault.wiki_dir.is_dir()
+    assert vault.wiki_dir.stat().st_file_attributes & stat.FILE_ATTRIBUTE_HIDDEN
+    assert not vault.root.stat().st_file_attributes & stat.FILE_ATTRIBUTE_HIDDEN
+
+
 def test_note_pathは原本と同じ相対パスにmdを足したnotes_dirの下を返す(vault):
     original = vault.root / "20_projects" / "A社" / "01_見積" / "sub" / "見積.xlsx"
 
