@@ -227,9 +227,9 @@ claude plugin uninstall vault-kb@vault-kb
 
 ### フォルダ構成
 
-`/vault-kb:init` が、vault の中にフォルダを作る。ノートと記録は、片づけが作る。片づけが扱うのは、次の図の左の 5 つだけ。
+`/vault-kb:init` が、vault の中にフォルダを作る。ノートと記録は、AI が作る。ノートと `index.md` は片づけが、`.wiki/` は `/vault-kb:ask` と `/vault-kb:lint` が作る。`log.md` には、片づけと統合ページの更新が追記する。片づけが扱うのは、次の図の左の 5 つだけ。
 
-![vault の直下は 3 種類。片づけの対象の 5 フォルダ、利用者のフォルダの 5 つ、片づけが作るノートと記録。](images/folders.svg)
+![vault の直下は 3 種類。片づけの対象の 5 フォルダ、利用者のフォルダの 5 つ、AI が作るノートと記録（.notes/・.wiki/・index.md・log.md）。](images/folders.svg)
 
 - 案件は `20_projects`・`80_archive` 直下のフォルダ、区分はその下のフォルダ。`30_shared`（案件名 `shared`）と `40_knowledge`（案件名 `knowledge`）は案件に属さない資料で、直下が区分になる。
 - `40_knowledge` の直下に置いたファイルは、片づけで区分のフォルダへ動く。既存の `40_knowledge` の中身も、最初の片づけで一括で区分に分かれる。
