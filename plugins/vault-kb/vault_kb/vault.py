@@ -182,11 +182,6 @@ class Vault:
 
     root: Path
 
-    @property
-    def base(self) -> Path:
-        """束の根。root と同じ（旧構成で別の場所だった名残の呼び名）。"""
-        return self.root
-
     def project_folders(self) -> list[tuple[str, Path]]:
         """(案件名, フォルダ)。20_projects → 80_archive → 30_shared → 40_knowledge の順。"""
         found = []
@@ -211,11 +206,11 @@ class Vault:
 
     @property
     def notes_dir(self) -> Path:
-        return self.base / NOTES_NAME
+        return self.root / NOTES_NAME
 
     def note_path(self, original: Path) -> Path:
         """原本のノートの置き場所（notes_dir の下に、原本と同じ相対パス + .md）。"""
-        return self.notes_dir / f"{original.relative_to(self.base).as_posix()}.md"
+        return self.notes_dir / f"{original.relative_to(self.root).as_posix()}.md"
 
     def hide_notes_dir(self) -> None:
         """notes_dir を作り、Windows の隠し属性を付ける（エクスプローラーで隠す）。"""
@@ -261,19 +256,21 @@ def install_obsidian_assets(root: Path) -> None:
 
 def save_config(data_dir: Path, vault_root: Path) -> None:
     config = {"vault": str(vault_root)}
-    (data_dir / "config.json").write_text(
-        json.dumps(config, ensure_ascii=False, indent=2), encoding="utf-8"
-    )
+    atomic_write(data_dir / "config.json", json.dumps(config, ensure_ascii=False, indent=2))
 
 
 def load_vault(data_dir: Path) -> Vault:
     path = data_dir / "config.json"
     if not path.exists():
         raise ConfigError("vault が未設定です。`configure --vault <パス>` を実行してください。")
+    broken = ConfigError(f"{path} が壊れています。`configure` をやり直してください。")
     try:
-        root = Path(json.loads(path.read_text(encoding="utf-8"))["vault"])
+        configured = json.loads(path.read_text(encoding="utf-8"))["vault"]
+        root = Path(configured)
     except (json.JSONDecodeError, KeyError, TypeError) as error:
-        raise ConfigError(f"{path} が壊れています。`configure` をやり直してください。") from error
+        raise broken from error
+    if not configured:  # Path("") は「現在のフォルダ」になってしまう
+        raise broken
     if not root.is_dir():
         raise VaultNotFound(
             f"vault のフォルダが見つかりません（外付けドライブ・同期の切断などの可能性）: {root}"

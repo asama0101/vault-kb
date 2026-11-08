@@ -18,7 +18,7 @@ Record = dict[str, Any]
 
 
 def _path(vault: Vault) -> Path:
-    return vault.base / CONFLICTS_NAME
+    return vault.root / CONFLICTS_NAME
 
 
 def _is_inside(rel: str) -> bool:
@@ -62,7 +62,7 @@ def _usable_name(name: str) -> bool:
 
 def _has_link(vault: Vault, rel: str) -> bool:
     """vault から rel までの、どの階層かがリンクか（20_projects・80_archive 自体を含む）。"""
-    path = vault.base
+    path = vault.root
     for part in PurePosixPath(rel).parts:
         path = path / part
         if is_link(path):
@@ -81,7 +81,7 @@ def _places(vault: Vault, record: Record) -> tuple[Path, Path] | None:
     parts = (*PurePosixPath(record["source"]).parts, *PurePosixPath(record["destination"]).parts)
     ok = (
         source != destination
-        and source.parent in {vault.base / INBOX_NAME, *projects}
+        and source.parent in {vault.root / INBOX_NAME, *projects}
         and destination.parent.parent in projects
         and not any(part.startswith(".") for part in parts)
         and _usable_name(source.name)

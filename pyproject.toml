@@ -1,3 +1,10 @@
+# パッケージとしては配布しない。ruff に対象の Python の版を伝えるための最小の表
+# （run.py の MIN_PYTHON と同じ。上限の 3.15 未満は run.py が検査する）
+[project]
+name = "vault-kb"
+requires-python = ">=3.12"
+dynamic = ["version"]
+
 [dependency-groups]
 dev = [
     "colorama==0.4.6",
@@ -11,7 +18,7 @@ dev = [
 
 [tool.ruff]
 line-length = 100
-target-version = "py310"
+target-version = "py312"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "UP", "SIM", "S", "PT"]

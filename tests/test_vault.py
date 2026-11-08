@@ -123,7 +123,7 @@ def test_init_vaultは00_inbox_20_projects_80_archive_利用者の領域_30_shar
     root = tmp_path / "仕事 vault"
     vault = init_vault(root)
 
-    assert vault.base == vault.root == root
+    assert vault.root == vault.root == root
     for name in ("00_inbox", "20_projects", "80_archive"):
         assert (root / name).is_dir()
     for name in ("10_daily", "50_prompts", "90_attachments"):
@@ -170,18 +170,47 @@ def test_load_vaultは未設定ならConfigError_フォルダがなければVaul
     assert load_vault(data).root == root
 
 
+def test_load_vaultはvaultが空文字の設定を壊れた設定として扱う(tmp_path):
+    data = tmp_path / "data"
+    data.mkdir()
+    (data / "config.json").write_text('{"vault": ""}', encoding="utf-8")
+
+    with pytest.raises(ConfigError, match="壊れています"):
+        load_vault(data)  # Path("") は現在のフォルダを指してしまう
+
+
+def test_save_configは書き込みが途中で失敗しても前の設定を壊さない(tmp_path, monkeypatch):
+    data = tmp_path / "data"
+    data.mkdir()
+    old, new = tmp_path / "old", tmp_path / "new"
+    old.mkdir()
+    new.mkdir()
+    save_config(data, old)
+
+    def interrupted(src, dst):
+        raise OSError("置き換えの直前に中断")
+
+    monkeypatch.setattr(vault.os, "replace", interrupted)
+    with pytest.raises(OSError, match="中断"):
+        save_config(data, new)
+    monkeypatch.undo()
+
+    assert load_vault(data).root == old
+    assert list(data.iterdir()) == [data / "config.json"]  # 一時ファイルを残さない
+
+
 def test_hide_notes_dirはnotes_dirを作り隠し属性を付け_2回目も壊さない(vault):
     vault.hide_notes_dir()
     vault.hide_notes_dir()
 
-    assert vault.notes_dir == vault.base / ".notes"
+    assert vault.notes_dir == vault.root / ".notes"
     assert vault.notes_dir.is_dir()
     assert vault.notes_dir.stat().st_file_attributes & stat.FILE_ATTRIBUTE_HIDDEN
-    assert not vault.base.stat().st_file_attributes & stat.FILE_ATTRIBUTE_HIDDEN
+    assert not vault.root.stat().st_file_attributes & stat.FILE_ATTRIBUTE_HIDDEN
 
 
 def test_note_pathは原本と同じ相対パスにmdを足したnotes_dirの下を返す(vault):
-    original = vault.base / "20_projects" / "A社" / "01_見積" / "sub" / "見積.xlsx"
+    original = vault.root / "20_projects" / "A社" / "01_見積" / "sub" / "見積.xlsx"
 
     assert vault.note_path(original) == (
         vault.notes_dir / "20_projects" / "A社" / "01_見積" / "sub" / "見積.xlsx.md"

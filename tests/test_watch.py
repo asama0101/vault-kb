@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 from helpers import make_note, put
 from vault_kb import convert, watch
-from vault_kb.reconcile import acquire, release
+from vault_kb.lock import acquire, release
 from vault_kb.vault import Vault
 
 
@@ -13,7 +13,7 @@ def note_for(vault, rel):
     """原本 rel（vault の根から）の隣に、実際の指紋を持つノートを置く。"""
     original = put(vault, rel)
     size, mtime_ns = convert.stat_of(original)
-    _, project, category, name = original.relative_to(vault.base).parts
+    _, project, category, name = original.relative_to(vault.root).parts
     make_note(vault, project, category, name, size=size, mtime_ns=mtime_ns)
     return original
 
@@ -181,14 +181,14 @@ def test_watch_eventsは無視する名前のファイルの変化に反応し�
 
 
 def test_watch_eventsは計画ファイルの書き込みに反応しない(vault, data_dir):
-    plan = vault.base / ".vault-kb-plan.json"
+    plan = vault.root / ".vault-kb-plan.json"
     sleep = counting_sleep({1: lambda: plan.write_text('{"items": []}', encoding="utf-8")})
 
     assert list(watch.watch_events(vault, data_dir, sleep=sleep, rounds=4)) == []
 
 
 def test_watch_eventsはmdの変化を無視する(vault, data_dir):
-    index = vault.base / "index.md"
+    index = vault.root / "index.md"
     sleep = counting_sleep({1: lambda: index.write_text("# 変更", encoding="utf-8")})
 
     assert list(watch.watch_events(vault, data_dir, sleep=sleep, rounds=4)) == []

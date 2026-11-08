@@ -3,7 +3,7 @@
 import json
 import shutil
 import subprocess
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
 from helpers import make_note, original_rel
@@ -12,7 +12,7 @@ from vault_kb import conflict, convert, watch
 from vault_kb.reconcile import apply, prepare
 from vault_kb.vault import is_link
 
-NOW = datetime(2026, 11, 2, 12, 0, tzinfo=timezone.utc)
+NOW = datetime(2026, 11, 2, 12, 0, tzinfo=UTC)
 EXISTING = "先にある原本の中身です。二十字を超える長さにしてある。"
 NEW = "後から来た資料の中身です。二十字を超える長さにしてある。"
 SOURCE = "00_inbox/x.txt"
@@ -87,7 +87,7 @@ def test_applyは同名で中身が違う資料を動かさずconflictにして�
     assert result["done"] == []
     assert incoming.read_text(encoding="utf-8") == NEW
     assert existing.read_text(encoding="utf-8") == EXISTING
-    (record,) = json.loads((vault.base / ".vault-kb-conflicts.json").read_text(encoding="utf-8"))
+    (record,) = json.loads((vault.root / ".vault-kb-conflicts.json").read_text(encoding="utf-8"))
     assert (record["source"], record["destination"]) == (SOURCE, DESTINATION)
     assert set(record) == {"source", "destination", "size", "mtime_ns"}
     assert record["size"] == incoming.stat().st_size
@@ -128,7 +128,7 @@ def test_同じ資料がもう一度衝突しても保留は1件のまま(vault,
     hold(vault, data_dir)
     prepare(vault, data_dir, NOW)
     # 保留の記録を消して、もう一度 apply しても、記録は 1 件
-    (vault.base / ".vault-kb-conflicts.json").unlink()
+    (vault.root / ".vault-kb-conflicts.json").unlink()
     hold(vault, data_dir)
     hold(vault, data_dir)
 
@@ -218,7 +218,7 @@ def _record(**override):
     ids=["JSONでない", "配列でない", "親へ出る", "絶対パス", "型が違う", "NUL文字"],
 )
 def test_holdsは壊れた保留の記録を無視する(vault, scene, content):
-    (vault.base / ".vault-kb-conflicts.json").write_text(content, encoding="utf-8")
+    (vault.root / ".vault-kb-conflicts.json").write_text(content, encoding="utf-8")
 
     assert conflict.holds(vault) == []
 
@@ -232,7 +232,7 @@ def _tamper(vault, victim, **override):
         "size": size,
         "mtime_ns": mtime_ns,
     } | override
-    (vault.base / ".vault-kb-conflicts.json").write_text(json.dumps([record]), encoding="utf-8")
+    (vault.root / ".vault-kb-conflicts.json").write_text(json.dumps([record]), encoding="utf-8")
     return record["source"]
 
 
@@ -282,7 +282,7 @@ def test_sourceが00_inboxのリンクの先なら無効で外のファイルを
     outside.mkdir()
     victim = outside / "f.txt"
     victim.write_text("外のファイル。二十字を超える長さにしてある。", encoding="utf-8")
-    junction(vault.base / "00_inbox" / "j", outside)
+    junction(vault.root / "00_inbox" / "j", outside)
     source = _tamper(vault, victim, source="00_inbox/j/f.txt")
 
     assert conflict.holds(vault) == []
@@ -335,8 +335,8 @@ def test_00_inbox自体がリンクなら無効で外のファイルを消さな
     outside.mkdir()
     victim = outside / "x.txt"
     victim.write_text("外のファイル。二十字を超える長さにしてある。", encoding="utf-8")
-    shutil.rmtree(vault.base / "00_inbox")
-    junction(vault.base / "00_inbox", outside)
+    shutil.rmtree(vault.root / "00_inbox")
+    junction(vault.root / "00_inbox", outside)
     source = _tamper(vault, victim, source=SOURCE)
 
     assert conflict.holds(vault) == []
@@ -350,8 +350,8 @@ def test_20_projects自体がリンクなら無効で外のファイルを消さ
     (outside / "A" / "01_x").mkdir(parents=True)
     victim = outside / "A" / "a.txt"
     victim.write_text("外のファイル。二十字を超える長さにしてある。", encoding="utf-8")
-    shutil.rmtree(vault.base / "20_projects")
-    junction(vault.base / "20_projects", outside)
+    shutil.rmtree(vault.root / "20_projects")
+    junction(vault.root / "20_projects", outside)
     source = _tamper(
         vault, victim, source="20_projects/A/a.txt", destination="20_projects/A/01_x/a.txt"
     )
@@ -371,7 +371,7 @@ def test_destinationの祖先がリンクなら無効で外のファイルを置
     target = outside / "01_見積" / "x.txt"
     target.write_text("外の原本。二十字を超える長さにしてある。", encoding="utf-8")
     hold(vault, data_dir)  # 保留の記録は本物で作る
-    project = vault.base / "20_projects" / "A社"
+    project = vault.root / "20_projects" / "A社"
     shutil.rmtree(project)  # A社 を、外へのリンクに差し替える
     junction(project, outside)
 

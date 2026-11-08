@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from . import bundle, conflict, convert
-from .reconcile import _is_fresh, _lock_path
+from .lock import is_fresh, lock_path
 from .vault import INBOX_NAME, Vault, atomic_write, is_link, walk
 
 STOP_NAME = "watch.stop"  # 置き場に書く、見張りへの停止の印
@@ -41,7 +41,7 @@ def status(vault: Vault, data_dir: Path) -> dict[str, Any]:
         **counts,
         "pending": sum(counts.values()),
         "conflicts": len(conflict.holds(vault)),
-        "busy": _is_fresh(_lock_path(data_dir), datetime.now().astimezone()),
+        "busy": is_fresh(lock_path(data_dir), datetime.now().astimezone()),
     }
 
 
@@ -90,14 +90,14 @@ def notify_lines(status: dict[str, Any]) -> list[str]:
 
 def snapshot(vault: Vault) -> dict[str, tuple[int, int]]:
     """00_inbox と案件フォルダの下の資料（予約名を除く）の {相対パス: (サイズ, 更新時刻 ns)}。"""
-    roots = [vault.base / INBOX_NAME, *(folder for _, folder in vault.project_folders())]
+    roots = [vault.root / INBOX_NAME, *(folder for _, folder in vault.project_folders())]
     found = {}
     for root in roots:
         if not root.is_dir() or is_link(root):
             continue
         _, files = walk(root)
         for path in files:
-            hidden = any(part.startswith(".") for part in path.relative_to(vault.base).parts)
+            hidden = any(part.startswith(".") for part in path.relative_to(vault.root).parts)
             if hidden or not bundle.is_original_file(path):  # .git・.obsidian などは資料ではない
                 continue
             try:
@@ -130,7 +130,7 @@ def watch_events(
             yield "stopped"
             return
         current = snapshot(vault)
-        busy = _is_fresh(_lock_path(data_dir), datetime.now().astimezone())
+        busy = is_fresh(lock_path(data_dir), datetime.now().astimezone())
         if current != baseline and current == previous and not busy:
             yield "changed"
             baseline = current

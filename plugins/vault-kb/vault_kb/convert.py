@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import functools
 import hashlib
 from pathlib import Path
+from typing import Any
 
 from .vault import SUPPORTED_EXTENSIONS
 
@@ -25,19 +27,26 @@ def stat_of(path: Path) -> tuple[int, int]:
     return info.st_size, info.st_mtime_ns
 
 
+@functools.cache
+def _converter() -> Any:
+    """MarkItDown を 1 回だけ作る（作るたびに、ファイル種別を判定するモデルを読み込むため）。"""
+    from markitdown import MarkItDown  # noqa: PLC0415 - 専用 venv にしかない
+
+    return MarkItDown()
+
+
 def extract(path: Path) -> tuple[str, str | None]:
     """(本文, None)。取り出せないときは ("", 理由)。OSError（使用中・権限）は呼び手に渡す。"""
     if path.suffix.lower() not in SUPPORTED_EXTENSIONS:
         return "", "対応しない形式です"
     from markitdown import (  # noqa: PLC0415 - 専用 venv にしかない
         FileConversionException,
-        MarkItDown,
         MissingDependencyException,
         UnsupportedFormatException,
     )
 
     try:
-        text = MarkItDown().convert(str(path)).text_content.strip()
+        text = _converter().convert(str(path)).text_content.strip()
     except (FileConversionException, UnsupportedFormatException, MissingDependencyException) as e:
         return "", f"{type(e).__name__}: {e}"
     except OSError:
