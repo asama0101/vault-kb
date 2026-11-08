@@ -129,7 +129,7 @@ claude plugin uninstall vault-kb@vault-kb
 セッションを閉じると見張りは止まる。開き直したら、また `/vault-kb:watch` と打つ。止まっている間に置いた資料は、次の `/vault-kb:watch`・`/vault-kb:sweep`・`/vault-kb:ask` で片づく。片づけ待ちの資料があると、Claude Code の起動時に、次のような 1 行の通知が出る（通知だけで、片づけはしない。待ちがなければ何も出ない）。
 
 ```
-[vault-kb] 片づけ待ちが 3 件あります（/vault-kb:watch か /vault-kb:ask で片づきます）
+[vault-kb] 片づけ待ちが 3 件あります（/vault-kb:sweep・/vault-kb:watch・/vault-kb:ask で片づきます）
 ```
 
 見張りを自分で止めるときは、どのセッションからでも次を打つ。

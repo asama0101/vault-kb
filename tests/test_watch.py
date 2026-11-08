@@ -66,7 +66,9 @@ def test_statusはmtime_nsが整数でないノートで原本を登録済みに
 def test_notify_linesは待ちがあれば件数と片づけ方を1行で出す():
     lines = watch.notify_lines({"pending": 3, "conflicts": 0})
 
-    assert lines == ["片づけ待ちが 3 件あります（/vault-kb:watch か /vault-kb:ask で片づきます）"]
+    assert lines == [
+        "片づけ待ちが 3 件あります（/vault-kb:sweep・/vault-kb:watch・/vault-kb:ask で片づきます）"
+    ]
 
 
 def test_notify_linesは待ちがなければ空():

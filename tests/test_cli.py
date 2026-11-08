@@ -238,7 +238,8 @@ def test_notifyは片づけ待ちを1行で案内し片づけはしない(config
 
     assert result.returncode == 0
     assert result.stdout == (
-        "[vault-kb] 片づけ待ちが 1 件あります（/vault-kb:watch か /vault-kb:ask で片づきます）\n"
+        "[vault-kb] 片づけ待ちが 1 件あります"
+        "（/vault-kb:sweep・/vault-kb:watch・/vault-kb:ask で片づきます）\n"
     )
     assert memo.read_text(encoding="utf-8") == TEXT
     assert not (data / "reconcile.lock").exists()
