@@ -2,8 +2,10 @@
 
     python run.py [--data <置き場>] <サブコマンド> [引数...]
 
-- doctor: 診断だけを行う（何も変更しない）。
-- setup [--yes]: 専用環境（venv）を作る。--yes なしは、作成内容を表示して止まる。
+- doctor: 診断だけを行う（何も変更しない）。OS・Python・python コマンド・専用環境・vault を確かめ、
+  足りないものには対処を表示する。
+- setup [--mode venv|system] [--yes]: 専用環境を作る。venv は置き場の venv に、system は実行中の
+  Python に入れる。既定は venv。--yes なしは、作成内容を表示して止まる。
 - approve: PreToolUse フック。stdin のツール呼び出しが vault-kb 自身の片づけの操作なら
   allow を出す。それ以外は何も出さない（通常の確認に任せる）。常に終了コード 0。
 - それ以外（configure / status / notify / prepare / apply / release / reindex / watch / unwatch /
@@ -11,7 +13,10 @@
   専用環境の Python で vault_kb を実行する。
 
 置き場は、環境変数 VAULT_KB_HOME、次に --data の順で決める。
-終了コード: 0 成功、1 実行時のエラー、2 引数・設定のエラー、3 専用環境が使えない。
+専用環境は、置き場の venv があればそれを使い、なければ実行中の Python に requirements.txt と
+同じ版が揃っていればそれを使う。
+終了コード: 0 成功、1 実行時のエラー、2 引数・設定のエラー、3 専用環境が使えない、
+4 （doctor のみ）vault だけに問題がある。
 """
 
 from __future__ import annotations
@@ -21,6 +26,7 @@ import importlib.util
 import json
 import os
 import shlex
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -30,6 +36,9 @@ REQUIREMENTS = ROOT / "requirements.txt"
 RECONCILE = ROOT / "references" / "reconcile.md"
 MIN_PYTHON = (3, 10)
 APPROX_SIZE = "約 300 MB"
+MIN_FREE_MB = 500
+PYPI_URL = "https://pypi.org/simple/"
+MODES = ("venv", "system")
 PLAN_NAME = ".vault-kb-plan.json"
 # 確認なしで通す run.py のサブコマンド（init の setup --yes・configure は確認を出したまま）
 UNATTENDED = {"status", "prepare", "release", "watch", "unwatch", "record-stop"}
@@ -60,7 +69,7 @@ def _requirements_hash() -> str:
     return hashlib.sha256(REQUIREMENTS.read_bytes().replace(b"\r\n", b"\n")).hexdigest()
 
 
-def _env_problem(data: Path) -> str | None:
+def _venv_problem(data: Path) -> str | None:
     if not _venv_python(data).exists():
         return "専用環境が未作成です"
     marker = _marker(data)
@@ -69,34 +78,208 @@ def _env_problem(data: Path) -> str | None:
     return None
 
 
+def _packages_problem(requirements: Path = REQUIREMENTS) -> str | None:
+    """実行中の Python に、requirements.txt と同じ版のパッケージが揃っているか。"""
+    from importlib import metadata  # approve（全ツール呼び出しで走る）を重くしない
+
+    for line in requirements.read_text(encoding="utf-8").splitlines():
+        name, _, pinned = line.partition("==")
+        name, pinned = name.strip(), pinned.strip()
+        if not pinned:
+            continue
+        try:
+            installed = metadata.version(name)
+        except metadata.PackageNotFoundError:
+            return f"{name} が未導入です"
+        if installed != pinned:
+            return f"{name} の版が違います（固定 {pinned}、導入済み {installed}）"
+    return None
+
+
+def _runtime(data: Path) -> tuple[str | None, str | None, str | None]:
+    """使う Python を決める。(種類, Python のパス, 問題)。venv が先、なければ実行中の Python。"""
+    venv_problem = _venv_problem(data)
+    if venv_problem is None:
+        return "venv", str(_venv_python(data)), None
+    if sys.version_info >= MIN_PYTHON and _packages_problem() is None:
+        return "system", sys.executable, None
+    return None, None, venv_problem
+
+
 def _guide(data: Path, problem: str) -> str:
     return (
         f"専用環境が使えません: {problem}\n"
         f"使用中の Python: {sys.executable}\n"
         f"置き場: {data}\n"
-        "利用者の承認を得て、`setup --yes` を実行してください。"
+        "利用者の承認を得て、`setup --yes`（システムの Python に入れるなら "
+        "`setup --mode system --yes`）を実行してください。"
     )
 
 
-def _python_problem() -> str | None:
+def _python_problem(need_venv: bool = True) -> str | None:
     if sys.version_info < MIN_PYTHON:
         need = ".".join(map(str, MIN_PYTHON))
         return f"Python {need} 以上が必要です（現在 {sys.version.split()[0]}）"
-    for module in ("venv", "ensurepip"):
+    for module in ("venv", "ensurepip") if need_venv else ():
         if importlib.util.find_spec(module) is None:
             return f"Python の {module} モジュールが使えません"
     return None
 
 
+def _pypi_problem() -> str | None:
+    import urllib.request  # approve（全ツール呼び出しで走る）を重くしない
+
+    request = urllib.request.Request(PYPI_URL, method="HEAD")
+    try:
+        with urllib.request.urlopen(request, timeout=5):  # noqa: S310  固定の https の URL
+            return None
+    except OSError as error:  # URLError・タイムアウトを含む
+        return (
+            f"PyPI に届きません（{error}）。"
+            "社内ネットワークでは、プロキシの設定（環境変数 HTTPS_PROXY）が要ることがあります。"
+            "pip の設定（pip.ini の index-url）で社内ミラーを使っているなら、この NG は無視してよい"
+        )
+
+
+def _disk_problem(path: Path) -> str | None:
+    probe = path
+    while not probe.exists() and probe != probe.parent:
+        probe = probe.parent  # 未作成の置き場は、存在する親のドライブで測る
+    try:
+        free_mb = shutil.disk_usage(probe).free // (1024 * 1024)
+    except OSError as error:  # 存在しないドライブなど
+        return f"空き容量を調べられません（{error}）"
+    if free_mb < MIN_FREE_MB:
+        return f"空き容量が足りません（{free_mb} MB。{MIN_FREE_MB} MB 以上が必要）"
+    return None
+
+
+def _vault_problem(data: Path) -> tuple[str | None, str]:
+    """(問題, 設定されている vault のパス)。"""
+    path = data / "config.json"
+    if not path.exists():
+        return "vault が未設定です", ""
+    try:
+        configured = json.loads(path.read_text(encoding="utf-8"))["vault"]
+        if not configured:  # Path("") は「現在のフォルダ」になってしまう
+            raise ValueError(configured)
+        root = Path(configured)
+    except (OSError, ValueError, KeyError, TypeError):
+        return f"{path} が壊れています", ""
+    if not root.is_dir():
+        return (
+            f"vault のフォルダが見つかりません（別の PC・外付けドライブ・同期の切断など）: {root}",
+            "",
+        )
+    return None, str(root)
+
+
+def _show(name: str, problem: str | None, remedy: list[str], ok_detail: str = "") -> bool:
+    """診断の 1 行を出す。問題があれば、対処の行を続ける。問題があったかを返す。"""
+    if problem is None:
+        print(f"OK  {name}" + (f": {ok_detail}" if ok_detail else ""))
+        return False
+    print(f"NG  {name}: {problem}")
+    for line in remedy:
+        print(f"      {line}")
+    return True
+
+
+def _hook_python() -> tuple[str, str | None]:
+    """(`python` コマンドが指す Python の実体, 問題)。フックと同じ `python` を実際に起動する。"""
+    found = shutil.which("python")
+    if found is None:
+        return "", "PATH に python がありません（フックが python で起動する）"
+    try:
+        done = subprocess.run(
+            [found, "-c", "import sys; print(sys.executable)"],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=5,
+            env={**os.environ, "PYTHONUTF8": "1"},
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        done = None
+    executable = done.stdout.strip() if done and done.returncode == 0 else ""
+    if not executable:
+        return "", f"python を起動できません（Microsoft Store の案内だけが出る状態など）: {found}"
+    return executable, None
+
+
 def _doctor(data: Path) -> int:
-    checks = [
-        ("Python", _python_problem()),
-        ("専用環境", _env_problem(data)),
-    ]
+    run_py = f'python "{ROOT / "run.py"}" --data "{data.absolute()}"'
+    kind, _, runtime_problem = _runtime(data)
     print(f"使用中の Python: {sys.executable}\n置き場: {data}")
-    for name, problem in checks:
-        print(f"{'NG' if problem else 'OK'}  {name}" + (f": {problem}" if problem else ""))
-    return 3 if any(problem for _, problem in checks) else 0
+
+    hook_python, hook_problem = _hook_python()
+    python_remedy = [
+        "Python のインストーラの「Add python.exe to PATH」を入れて入れ直すか、",
+        "環境変数 PATH に python.exe のあるフォルダを足す。新しいターミナルで確かめる。",
+    ]
+    if hook_problem is None and kind == "system" and not _same(hook_python, Path(sys.executable)):
+        hook_problem = (
+            f"フックが使う python は {hook_python}。専用環境（システムの Python）は "
+            f"{sys.executable} で、別の Python です"
+        )
+        python_remedy = [
+            "python コマンドで doctor を実行し直す（python コマンドのほうが使われる）:"
+        ]
+        python_remedy.append(f"  {run_py} doctor")
+    runtime_name = "専用環境"
+    if runtime_problem:
+        system_problem = (
+            "Python 3.10 以上が必要です" if sys.version_info < MIN_PYTHON else _packages_problem()
+        )
+        runtime_problem = f"{runtime_problem}（システムの Python: {system_problem}）"
+    else:
+        runtime_name += "（venv）" if kind == "venv" else "（システムの Python）"
+    env_ng = [
+        _show(
+            "OS",
+            None if sys.platform == "win32" else f"Windows 専用です（現在 {sys.platform}）",
+            [],
+        ),
+        _show(
+            "Python",
+            _python_problem(need_venv=kind != "system"),
+            [
+                "Python 3.10 以上を入れる（python.org、または winget install Python.Python.3.12）",
+                "入れたあと、新しいターミナルで python --version を確かめる。",
+            ],
+        ),
+        _show("python コマンド", hook_problem, python_remedy, ok_detail=hook_python),
+        _show(
+            runtime_name,
+            runtime_problem,
+            [
+                "対処（どちらか 1 つ。実行の承認が要る）:",
+                f"  venv に入れる（推奨）: {run_py} setup --mode venv --yes",
+                f"  システムの Python に入れる: {run_py} setup --mode system --yes",
+                "Claude Code では /vault-kb:init で選べる。",
+            ],
+        ),
+    ]
+    if runtime_problem:  # 作るときに要るものだけを確かめる（毎回の待ちを避ける）
+        env_ng.append(_show("PyPI への接続", _pypi_problem(), []))
+        env_ng.append(
+            _show("空き容量", _disk_problem(data), ["置き場のあるドライブに空きを作る。"])
+        )
+    vault_problem, vault_path = _vault_problem(data)
+    vault_ng = _show(
+        "vault",
+        vault_problem,
+        [
+            "Claude Code で /vault-kb:init を実行して設定する（パスを聞かれる）。",
+            f'ターミナルでは: {run_py} configure --vault "<vault のパス>"',
+        ],
+        ok_detail=vault_path,
+    )
+    if any(env_ng):
+        return 3
+    return 4 if vault_ng else 0
 
 
 def _setup(data: Path, approved: bool) -> int:
@@ -140,6 +323,69 @@ def _setup(data: Path, approved: bool) -> int:
         return 1
     _marker(data).write_text(_requirements_hash(), encoding="utf-8")
     print(f"専用環境を作成しました: {venv_dir}")
+    return 0
+
+
+def _setup_system(data: Path, approved: bool) -> int:
+    """実行中の Python のユーザー領域（pip install --user）に入れる。"""
+    if sys.prefix != sys.base_prefix:  # --user が使えず、利用者の仮想環境を書き換えてしまう
+        print(
+            f"仮想環境の中で動いています（{sys.prefix}）。システムの Python には入れられません。"
+            "仮想環境の外の Python で実行するか、`setup --mode venv` を使ってください。",
+            file=sys.stderr,
+        )
+        return 3
+    command = [sys.executable, "-m", "pip", "install", "--user", "--disable-pip-version-check"]
+    if not approved:
+        count = len(
+            [line for line in REQUIREMENTS.read_text(encoding="utf-8").splitlines() if line.strip()]
+        )
+        print(
+            "システムの Python にパッケージを入れます（利用者の承認が必要です）。\n"
+            f"- 実行: {' '.join(command)} -r requirements.txt\n"
+            f"- 内容: markitdown と依存ライブラリ（{count} 件。PyPI から取得）\n"
+            f"- 容量: {APPROX_SIZE}\n"
+            "- 注意: 他のツールが使う同名のパッケージの版が、固定の版に変わることがあります。\n"
+            "  避けたいときは、venv に入れてください（`setup --mode venv`）。\n"
+            "承認する場合は、`setup --mode system --yes` を付けて再実行してください。"
+        )
+        return 3
+    if problem := _python_problem(need_venv=False):
+        print(_guide(data, problem), file=sys.stderr)
+        return 3
+    data.mkdir(parents=True, exist_ok=True)
+    try:
+        # cwd は置き場にする（-m は cwd の同名モジュールを先に読むため、利用者のフォルダを避ける）
+        subprocess.run([*command, "-r", str(REQUIREMENTS)], check=True, cwd=data)
+    except subprocess.CalledProcessError as error:
+        print(f"パッケージの導入に失敗しました（終了コード {error.returncode}）", file=sys.stderr)
+        return 1
+    # pip が成功しても、読めないことがある（ユーザー領域が無効など）。別プロセスで確かめる
+    check = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "import sys; sys.path.insert(0, sys.argv[1]); import run; "
+            "print(run._packages_problem() or '')",
+            str(ROOT),
+        ],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        env={**os.environ, "PYTHONUTF8": "1"},
+        cwd=data,
+        check=False,
+    )
+    if check.returncode != 0 or check.stdout.strip():
+        reason = check.stdout.strip() or check.stderr.strip()
+        print(
+            f"入れましたが、この Python から使えません: {reason}\n"
+            "ユーザー領域が無効（PYTHONNOUSERSITE など）の可能性があります。"
+            "`setup --mode venv` を使ってください。",
+            file=sys.stderr,
+        )
+        return 1
+    print(f"システムの Python に入れました: {sys.executable}")
     return 0
 
 
@@ -204,7 +450,7 @@ def _approve(data: Path) -> int:
 
 
 def _delegate(data: Path, args: list[str]) -> int:
-    problem = _env_problem(data)
+    _, python, problem = _runtime(data)
     if problem:
         if args[0] == "notify":  # セッション開始のフックは、未導入でも成功させて、init を案内する
             print(f"[vault-kb] {problem}。/vault-kb:init で設定してください。")
@@ -212,9 +458,7 @@ def _delegate(data: Path, args: list[str]) -> int:
         print(_guide(data, problem), file=sys.stderr)
         return 3
     env = {**os.environ, "VAULT_KB_HOME": str(data), "PYTHONUTF8": "1"}
-    return subprocess.run(
-        [str(_venv_python(data)), str(ROOT / "kb.py"), *args], env=env, check=False
-    ).returncode
+    return subprocess.run([python, str(ROOT / "kb.py"), *args], env=env, check=False).returncode
 
 
 def main(argv: list[str]) -> int:
@@ -239,7 +483,22 @@ def main(argv: list[str]) -> int:
     if args[0] == "doctor":
         return _doctor(data)
     if args[0] == "setup":
-        return _setup(data, approved="--yes" in args[1:])
+        rest = args[1:]
+        mode, unknown, values = "venv", [], iter(rest)
+        for arg in values:
+            if arg == "--mode":
+                mode = next(values, "")
+            elif arg != "--yes":
+                unknown.append(arg)  # `--mode=system` のような書き方で、黙って venv にしない
+        if mode not in MODES or unknown:
+            print(
+                f"setup の引数は `--mode {'|'.join(MODES)}` と `--yes` だけです"
+                f"（受け取った引数: {' '.join(rest)}）",
+                file=sys.stderr,
+            )
+            return 2
+        setup = _setup_system if mode == "system" else _setup
+        return setup(data, approved="--yes" in rest)
     return _delegate(data, args)
 
 
