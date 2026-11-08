@@ -268,6 +268,22 @@ def test_wiki_mdはwikiのコードの項目名で書く():
     ):
         assert f"`{field}`" in text, field
     assert '"full": true' in text
+
+
+def test_wiki_mdはbodyを省く条件を移動だけで_fullなし_deselectedなしに限る():
+    text = WIKI_GUIDE.read_text(encoding="utf-8")
+
+    # full の Lint・テーマの deselected で body を省くと、読み直しなし・apply の拒否になる
+    assert "`body` を省けるのは" in text
+    assert '`"full": true` を付けたとき' in text
+    assert "`deselected` が空でないときも、`body` を入れる" in text
+
+
+def test_wiki_mdは誤りの取り消しの前にwiki_checkをやり直してunreadを取る():
+    text = WIKI_GUIDE.read_text(encoding="utf-8")
+
+    # 同じ実行でページを書いた後の古い unread を使うと、未読が sources に入る
+    assert "取り消し線にする前に、`wiki-check` をもう一度実行し" in text
     assert "~~旧~~（取り消し 日付: 理由）" in text
 
 
