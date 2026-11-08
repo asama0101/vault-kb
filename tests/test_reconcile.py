@@ -1140,10 +1140,15 @@ def test_applyは旧版のlock_token付きの計画も受け付ける(vault, dat
 def test_リンクの根も_存在するフォルダとして扱う(vault, data_dir, tmp_path):
     outside = tmp_path / "外"
     outside.mkdir()
+    (outside / "A" / "01_x").mkdir(parents=True)
+    make_txt(outside / "A" / "01_x" / "f.txt", TEXT)
     (vault.root / "20_projects").rmdir()
     junction(vault.root / "20_projects", outside)
 
-    assert prepare(vault, data_dir, NOW)["warnings"] == []
+    result = prepare(vault, data_dir, NOW)
+
+    assert result["warnings"] == []
+    assert [i["source"] for i in result["items"]] == ["20_projects/A/01_x/f.txt"]
 
 
 def test_applyのsourceがvaultの外へ解決されればerror_リンクの検査を削っても残る(

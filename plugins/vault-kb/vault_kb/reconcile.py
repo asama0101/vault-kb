@@ -295,7 +295,8 @@ def _collect(
 
     変換するのは MAX_ITEMS 件まで（開けなかった項目は数えない）か、CONVERT_BUDGET_SECONDS を
     超えるまで（最低 1 件は返す）。残りの件数も返す。
-    shortcut: apply で毎回 error になる項目が MAX_ITEMS 件以上あると、後ろの資料は返らない。
+    shortcut: apply で毎回 error になる項目や、00_inbox に残り続ける同名・別内容の資料が
+    MAX_ITEMS 件以上あると、後ろの資料は返らない。
     """
     shas: _ShaCache = {}
     all_notes = bundle.notes(vault)

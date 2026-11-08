@@ -39,7 +39,7 @@ def acquire(data_dir: Path, now: datetime) -> None:
     path = lock_path(data_dir)
     # shortcut: 古いロックの引き継ぎは、2 本が同時に「古い」と見ると両方が取れる。
     # 落ちたロックが残った直後に、ask と見張りが同時に動くときだけ。
-    # 原本がもうない項目は apply が error にするので、二重には動かない
+    # 原本がもうない項目は apply が error にするので、ほぼ二重には動かない
     busy = Busy("別の片づけが進行中です。15 分後にもう一度試してください。")
     try:
         _create_lock(path, now)
@@ -54,5 +54,8 @@ def acquire(data_dir: Path, now: datetime) -> None:
 
 
 def release(data_dir: Path) -> None:
-    """ロックを解く。"""
+    """ロックを解く。
+
+    shortcut: 15 分の失効を超えた実行が解くと、引き継いだ新しい実行のロックを消しうる。
+    """
     lock_path(data_dir).unlink(missing_ok=True)

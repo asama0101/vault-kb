@@ -9,7 +9,7 @@
   <text x="34" y="74" font-size="15" font-weight="bold" fill="#1b2a6b">片づけの対象（原本を置く）</text>
 
   <text x="34" y="106" font-size="15" font-weight="bold" fill="#1b2a6b">00_inbox/</text>
-  <text x="34" y="126" font-size="13" fill="#1b2a6b">仕分け前。ここに置くと片づく（保留・失敗の資料は残る）</text>
+  <text x="34" y="126" font-size="13" fill="#1b2a6b">仕分け前。ここに置くと片づく（同名で中身が違う資料・失敗した資料は残る）</text>
 
   <text x="34" y="164" font-size="15" font-weight="bold" fill="#1b2a6b">20_projects/&lt;案件&gt;/&lt;区分&gt;/</text>
   <text x="34" y="184" font-size="13" fill="#1b2a6b">進行中の案件の原本。区分は 01_見積 のように番号つき</text>
