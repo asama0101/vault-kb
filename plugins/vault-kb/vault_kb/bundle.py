@@ -7,11 +7,10 @@ import os
 import re
 import unicodedata
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from vault_kb import conflict
 from vault_kb.vault import (
     ARCHIVE_NAME,
     INBOX_NAME,
@@ -28,7 +27,6 @@ from vault_kb.vault import (
     category_sort_key,
     fold_name,
     is_ignored,
-    is_link,
     is_supported,
     walk,
 )
@@ -53,8 +51,6 @@ NOTE_KEYS = (
 _HEAD_BYTES = 64 * 1024
 _KEY_LINE = re.compile(r"([^:\s][^:]*):\s*(.*)")
 _SHA256 = re.compile(r"[0-9a-f]{64}")
-LOG_KEEP_DAYS = 90  # log.md に残す日数（これより古い日付の見出しは消す）
-_LOG_HEADING = re.compile(r"## (\d{4}-\d{2}-\d{2})")
 _NOTE_CACHE: dict[Path, tuple[tuple[int, int], bool]] = {}  # 見張りが毎回開かないための記憶
 _PROJECT_ROOTS_FOLDED = {fold_name(name) for name in PROJECT_ROOTS}
 
@@ -138,13 +134,13 @@ def location(vault: Vault, path: Path) -> tuple[str, str] | None:
 
 
 def _shallow(folder: Path) -> tuple[list[Path], list[Path]]:
-    """folder 直下の (フォルダ, ファイル)。リンクは含めない。"""
-    entries = [e for e in folder.iterdir() if not is_link(e)]
+    """folder 直下の (フォルダ, ファイル)。"""
+    entries = list(folder.iterdir())
     return [e for e in entries if e.is_dir()], [e for e in entries if e.is_file()]
 
 
 def projects(vault: Vault) -> list[str]:
-    """案件名（名前順。20_projects・80_archive の案件と shared・knowledge。リンクは除く）。"""
+    """案件名（名前順。20_projects・80_archive の案件と shared・knowledge）。"""
     return sorted({name for name, _ in vault.project_folders()})
 
 
@@ -244,20 +240,18 @@ def originals(vault: Vault) -> list[Path]:
 def inbox_files(vault: Vault) -> list[Path]:
     """00_inbox 直下のファイル（拡張子は問わない。無視する名前を除く）。"""
     inbox = vault.root / INBOX_NAME
-    if not inbox.is_dir() or is_link(inbox):
+    if not inbox.is_dir():
         return []
     _, files = _shallow(inbox)
-    held = conflict.held_sources(vault)
-    return sorted(f for f in files if is_original_file(f) and f not in held)
+    return sorted(f for f in files if is_original_file(f))
 
 
 def project_root_files(vault: Vault) -> list[tuple[str, Path]]:
     """案件フォルダ直下のファイル（無視する名前を除く）。"""
     found = []
-    held = conflict.held_sources(vault)
     for project, folder in vault.project_folders():
         _, files = _shallow(folder)
-        found += [(project, f) for f in sorted(files) if is_original_file(f) and f not in held]
+        found += [(project, f) for f in sorted(files) if is_original_file(f)]
     return found
 
 
@@ -386,28 +380,10 @@ def write_indexes(vault: Vault) -> None:
     _write_index(vault.root / "index.md", head + "".join(root_lines))
 
 
-def _prune_log(text: str, today: datetime) -> str:
-    """LOG_KEEP_DAYS 日より古い日付の見出しと、その下の行を消す（見出しの前の文章は残す）。"""
-    cutoff = (today - timedelta(days=LOG_KEEP_DAYS)).date().isoformat()
-    kept = []
-    old = False
-    for line in text.splitlines(keepends=True):
-        if line.startswith("#"):  # 見出し。日付の見出しだけが、古ければ消える（ほかの見出しは残す）
-            heading = _LOG_HEADING.fullmatch(line.rstrip("\r\n"))
-            old = bool(heading) and heading[1] < cutoff
-        if not old:
-            kept.append(line)
-    pruned = "".join(kept)
-    return pruned.rstrip("\n") + "\n" if pruned.strip() else ""
-
-
 def append_log(vault: Vault, entries: list[str], now: datetime) -> None:
-    """log.md の今日の見出しの直後に entries を足す（見出しがなければ先頭に作る）。
-
-    LOG_KEEP_DAYS 日より古い日付の見出しは、このとき消す。
-    """
+    """log.md の今日の見出しの直後に entries を足す（見出しがなければ先頭に作る）。"""
     path = vault.root / "log.md"
-    existing = _prune_log(path.read_text(encoding="utf-8"), now) if path.exists() else ""
+    existing = path.read_text(encoding="utf-8") if path.exists() else ""
     heading = f"## {now.date().isoformat()}\n"
     lines = "".join(f"- {entry}\n" for entry in entries)
     if existing.startswith(heading):

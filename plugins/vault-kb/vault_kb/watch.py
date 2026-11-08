@@ -8,9 +8,9 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from . import bundle, conflict, convert
+from . import bundle, convert
 from .lock import is_fresh, lock_path
-from .vault import INBOX_NAME, Vault, atomic_write, is_link, walk
+from .vault import INBOX_NAME, Vault, atomic_write, walk
 
 STOP_NAME = "watch.stop"  # 置き場に書く、見張りへの停止の印
 
@@ -40,7 +40,6 @@ def status(vault: Vault, data_dir: Path) -> dict[str, Any]:
         "vault": str(vault.root),
         **counts,
         "pending": sum(counts.values()),
-        "conflicts": len(conflict.holds(vault)),
         "busy": is_fresh(lock_path(data_dir), datetime.now().astimezone()),
     }
 
@@ -53,9 +52,7 @@ def open_items(vault: Vault, data_dir: Path) -> dict[str, Any]:
         for note in bundle.notes(vault)
         if note.meta.get("readable") is False and note.original.is_file()
     ]
-    unresolved = (
-        result["pending"] + result["conflicts"] + int(result["busy"])
-    )  # 読めない資料は利用者が直せない
+    unresolved = result["pending"] + int(result["busy"])  # 読めない資料は利用者が直せない
     return {**result, "unreadable": unreadable, "unresolved": unresolved}
 
 
@@ -73,27 +70,12 @@ def _stop_requested_after(data_dir: Path, started: datetime) -> bool:
         return False
 
 
-def notify_lines(status: dict[str, Any]) -> list[str]:
-    """セッション開始時に利用者へ伝える文。伝えることがなければ空。"""
-    lines = []
-    if status["pending"] > 0:
-        lines.append(
-            f"片づけ待ちが {status['pending']} 件あります"
-            "（/vault-kb:sweep・/vault-kb:watch・/vault-kb:ask で片づきます）"
-        )
-    if status["conflicts"] > 0:
-        lines.append(
-            f"同名の確認待ちが {status['conflicts']} 件あります（/vault-kb:resolve で選べます）"
-        )
-    return lines
-
-
 def snapshot(vault: Vault) -> dict[str, tuple[int, int]]:
     """00_inbox と案件フォルダの下の資料（予約名を除く）の {相対パス: (サイズ, 更新時刻 ns)}。"""
     roots = [vault.root / INBOX_NAME, *(folder for _, folder in vault.project_folders())]
     found = {}
     for root in roots:
-        if not root.is_dir() or is_link(root):
+        if not root.is_dir():
             continue
         _, files = walk(root)
         for path in files:

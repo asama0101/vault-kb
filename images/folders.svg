@@ -9,7 +9,7 @@
   <text x="34" y="74" font-size="15" font-weight="bold" fill="#1b2a6b">片づけの対象（原本を置く）</text>
 
   <text x="34" y="106" font-size="15" font-weight="bold" fill="#1b2a6b">00_inbox/</text>
-  <text x="34" y="126" font-size="13" fill="#1b2a6b">仕分け前。ここに置くと片づく（保留・失敗の資料は残る）</text>
+  <text x="34" y="126" font-size="13" fill="#1b2a6b">仕分け前。ここに置くと片づく（同名で中身が違う資料・失敗した資料は残る）</text>
 
   <text x="34" y="164" font-size="15" font-weight="bold" fill="#1b2a6b">20_projects/&lt;案件&gt;/&lt;区分&gt;/</text>
   <text x="34" y="184" font-size="13" fill="#1b2a6b">進行中の案件の原本。区分は 01_見積 のように番号つき</text>
@@ -26,14 +26,13 @@
   <text x="34" y="388" font-size="13" fill="#1b2a6b">どの案件にも 99_その他 の区分がある</text>
 
   <!-- 利用者のフォルダ -->
-  <rect x="460" y="48" width="320" height="196" fill="#ffffff" stroke="#555" stroke-width="2" stroke-dasharray="7 4"/>
+  <rect x="460" y="48" width="320" height="172" fill="#ffffff" stroke="#555" stroke-width="2" stroke-dasharray="7 4"/>
   <text x="474" y="74" font-size="15" font-weight="bold" fill="#222">利用者のフォルダ（動かさない）</text>
   <text x="474" y="102" font-size="14" fill="#222"><tspan font-weight="bold">10_daily/</tspan>　デイリーノート</text>
   <text x="474" y="128" font-size="14" fill="#222"><tspan font-weight="bold">50_prompts/</tspan>　Claude 指示プロンプト</text>
   <text x="474" y="154" font-size="14" fill="#222"><tspan font-weight="bold">90_attachments/</tspan>　添付ファイル</text>
   <text x="474" y="180" font-size="14" fill="#222"><tspan font-weight="bold">91_templates/</tspan>　テンプレート 7 種類</text>
-  <text x="474" y="206" font-size="14" fill="#222"><tspan font-weight="bold">92_bases/</tspan>　その日のノート.base</text>
-  <text x="474" y="230" font-size="13" fill="#222">検索の対象外。ノートも作らない</text>
+  <text x="474" y="206" font-size="13" fill="#222">検索の対象外。ノートも作らない</text>
 
   <!-- ノートと記録 -->
   <rect x="460" y="262" width="320" height="142" rx="14" fill="#fff4e0" stroke="#e8590c" stroke-width="2"/>
@@ -41,5 +40,5 @@
   <text x="474" y="314" font-size="14" fill="#7a2e00"><tspan font-weight="bold">.notes/</tspan>　隠しフォルダ</text>
   <text x="474" y="334" font-size="13" fill="#7a2e00">ノートと、案件・区分の index.md</text>
   <text x="474" y="362" font-size="14" fill="#7a2e00"><tspan font-weight="bold">index.md</tspan>　案件の一覧（vault 直下）</text>
-  <text x="474" y="388" font-size="14" fill="#7a2e00"><tspan font-weight="bold">log.md</tspan>　履歴・直近 90 日分（vault 直下）</text>
+  <text x="474" y="388" font-size="14" fill="#7a2e00"><tspan font-weight="bold">log.md</tspan>　履歴（vault 直下）</text>
 </svg>

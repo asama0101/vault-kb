@@ -93,14 +93,6 @@ def test_専用環境がないとき委譲するコマンドは終了コード3�
     assert BASE_PYTHON in result.stderr
 
 
-def test_notifyは専用環境がないとき_initを案内して成功する(tmp_path):
-    result = run("--data", str(tmp_path / "data"), "notify")
-
-    assert result.returncode == 0
-    assert "/vault-kb:init" in result.stdout
-    assert result.stderr == ""
-
-
 def test_doctorは専用環境がないとき終了コード3で診断を出す(tmp_path):
     result = run("--data", str(tmp_path / "data"), "doctor")
 
@@ -174,14 +166,13 @@ def test_委譲したコマンドの結果と終了コードがそのまま返�
     vault_dir.mkdir()
 
     configured = run("configure", "--vault", str(vault_dir), "--data", str(data))
-    notified = run("notify", "--data", str(data))
+    status_result = run("status", "--data", str(data))
     failed = run("nosuch", "--data", str(data))
 
     assert configured.returncode == 0, configured.stderr
     assert json.loads(configured.stdout) == {"vault": str(vault_dir)}
-    assert notified.returncode == 0
-    assert notified.stderr == ""
-    assert "未設定" not in notified.stdout  # 見張りの案内は claude の有無で変わる
+    assert status_result.returncode == 0
+    assert status_result.stderr == ""
     assert failed.returncode == 2
     assert "invalid choice" in failed.stderr
 
@@ -337,14 +328,14 @@ def test_PyPIに届けば問題はない(monkeypatch):
     assert module._pypi_problem() is None
 
 
-def test_doctorは専用環境が使えないとき2通りの対処コマンドを実在のパスで出す(tmp_path):
+def test_doctorの対処は_venvの1つだけ(tmp_path):
     data = tmp_path / "置き場 data"
 
     result = run("--data", str(data), "doctor")
 
     assert result.returncode == 3
-    for mode in ("venv", "system"):
-        assert f'python "{RUN}" --data "{data}" setup --mode {mode} --yes' in result.stdout
+    assert f'python "{RUN}" --data "{data}" setup --yes' in result.stdout
+    assert "--mode" not in result.stdout
 
 
 def test_doctorはpythonコマンドがPATHにないときNGと対処を出す(tmp_path):
@@ -432,75 +423,12 @@ def test_venvとシステムの両方が使えるときはvenvを使う(tmp_path
     assert "OK  専用環境（venv）" in result.stdout
 
 
-def test_system指定のsetupはyesなしで警告を出して何も入れない(tmp_path):
-    data = tmp_path / "data"
-
-    result = run("--data", str(data), "setup", "--mode", "system")
-
-    assert result.returncode == 3
-    assert BASE_PYTHON in result.stdout
-    assert "--user" in result.stdout
-    assert "他のツール" in result.stdout
-    assert "--yes" in result.stdout
-    assert not data.exists()
-
-
-def test_setupのmodeが不正なとき終了コード2でvenvとsystemを案内する(tmp_path):
-    result = run("--data", str(tmp_path / "data"), "setup", "--mode", "conda", "--yes")
+def test_setupは_modeを受け付けず終了コード2(tmp_path):
+    result = run("--data", str(tmp_path / "data"), "setup", "--mode", "venv", "--yes")
 
     assert result.returncode == 2
-    assert "venv" in result.stderr
-    assert "system" in result.stderr
-    assert not (tmp_path / "data").exists()
-
-
-@pytest.mark.slow
-def test_systemを承認すると実行中のPythonのユーザー領域に入り専用環境なしで使える(tmp_path):
-    data = tmp_path / "data"
-    userbase = tmp_path / "userbase"  # 開発者自身の Python を汚さないよう、入れ先を分ける
-    vault_dir = tmp_path / "仕事 vault"
-    vault_dir.mkdir()
-    options = {
-        "env_extra": {"PYTHONUSERBASE": str(userbase), **python_first(BASE_PYTHON)},
-        "flags": (),
-        "offline": False,
-    }
-
-    setup = run("setup", "--mode", "system", "--yes", "--data", str(data), **options)
-    configured = run("configure", "--vault", str(vault_dir), "--data", str(data), **options)
-    doctor = run("doctor", "--data", str(data), **options)
-    status = run("status", "--data", str(data), **options)
-
-    assert setup.returncode == 0, setup.stderr
-    assert any(userbase.rglob("markitdown"))
-    assert configured.returncode == 0, configured.stderr
-    assert doctor.returncode == 0, doctor.stdout
-    assert "OK  専用環境（システムの Python）" in doctor.stdout
-    assert status.returncode == 0, status.stderr
-    assert not (data / "venv").exists()
-
-
-def test_setupは_mode_のイコール形式など不明な引数を終了コード2で止める(tmp_path):
-    result = run("--data", str(tmp_path / "data"), "setup", "--mode=system", "--yes")
-
-    assert result.returncode == 2
-    assert "--mode" in result.stderr
-    assert not (tmp_path / "data").exists()
-
-
-def test_仮想環境の中ではsystem指定のsetupを終了コード3で断る(tmp_path):
-    result = run(
-        "--data",
-        str(tmp_path / "data"),
-        "setup",
-        "--mode",
-        "system",
-        "--yes",
-        python=empty_venv_python(tmp_path / "light"),
-    )
-
-    assert result.returncode == 3
-    assert "仮想環境" in result.stderr
+    assert "--yes" in result.stderr
+    assert "`--yes` だけ" in result.stderr
     assert not (tmp_path / "data").exists()
 
 
@@ -605,27 +533,6 @@ def test_doctorの対処コマンドは相対パスの置き場を絶対パス�
     result = run("--data", "rel-data", "doctor", cwd=tmp_path)
 
     assert f'--data "{tmp_path / "rel-data"}"' in result.stdout
-
-
-def test_pipが成功しても読み込めなければsetupは失敗を報告する(tmp_path, monkeypatch, capsys):
-    module = load_run_module()
-    real_run = subprocess.run
-
-    def pip_succeeds(command, *args, **kwargs):
-        # 外部への導入（pip）だけを成功に置き換える。導入後の確認は本物のプロセスで行う
-        if "pip" in command:
-            return SimpleNamespace(returncode=0)
-        return real_run(command, *args, **kwargs)
-
-    monkeypatch.setattr(module.subprocess, "run", pip_succeeds)
-    empty = empty_venv_python(tmp_path / "light")  # 固定版の入っていない Python
-    monkeypatch.setattr(module.sys, "executable", empty)
-    monkeypatch.setattr(module.sys, "prefix", module.sys.base_prefix)  # 仮想環境の外とみなす
-
-    code = module._setup_system(tmp_path / "data", approved=True)
-
-    assert code == 1
-    assert "使えません" in capsys.readouterr().err
 
 
 @pytest.mark.parametrize("version", [(3, 10, 0), (3, 11, 9), (3, 15, 0)])

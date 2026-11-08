@@ -9,13 +9,11 @@ from vault_kb.vault import (
     check_folder_name,
     init_vault,
     is_ignored,
-    is_link,
     is_supported,
     load_vault,
     next_category_name,
     resolve_category,
     save_config,
-    walk,
 )
 
 
@@ -215,23 +213,6 @@ def test_note_pathは原本と同じ相対パスにmdを足したnotes_dirの下
     assert vault.note_path(original) == (
         vault.notes_dir / "20_projects" / "A社" / "01_見積" / "sub" / "見積.xlsx.md"
     )
-
-
-def test_is_linkは存在しないパスでFalseを返す(tmp_path):
-    assert is_link(tmp_path / "ない") is False
-
-
-def test_walkはリンクのファイルを含めない(tmp_path, monkeypatch):
-    root = tmp_path / "root"
-    root.mkdir()
-    (root / "実体.txt").write_text("中", encoding="utf-8")
-    (root / "リンク.txt").write_text("外", encoding="utf-8")
-    # 権限がなくてもリンクを作れない環境があるので、リンクの判定だけを置き換える
-    monkeypatch.setattr(vault, "is_link", lambda path: path.name == "リンク.txt")
-
-    _, files = walk(root)
-
-    assert [f.name for f in files] == ["実体.txt"]
 
 
 @pytest.mark.parametrize("name", ["CON", "aux", "Nul.txt", "COM1", "lpt9"])

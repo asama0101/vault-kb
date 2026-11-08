@@ -37,9 +37,12 @@ def test_statusはinbox_案件直下_未登録_孤児_更新の件数と合計�
         "orphan": 1,
         "changed": 1,
         "pending": 5,
-        "conflicts": 0,
         "busy": False,
     }
+
+
+def test_statusはconflictsを返さない(vault, data_dir):
+    assert "conflicts" not in watch.status(vault, data_dir)
 
 
 def test_statusはロックが生きていればbusy(vault, data_dir):
@@ -61,18 +64,6 @@ def test_statusはmtime_nsが整数でないノートで原本を登録済みに
     result = watch.status(vault, data_dir)
 
     assert (result["unregistered"], result["changed"]) == (1, 0)  # a.txt だけ
-
-
-def test_notify_linesは待ちがあれば件数と片づけ方を1行で出す():
-    lines = watch.notify_lines({"pending": 3, "conflicts": 0})
-
-    assert lines == [
-        "片づけ待ちが 3 件あります（/vault-kb:sweep・/vault-kb:watch・/vault-kb:ask で片づきます）"
-    ]
-
-
-def test_notify_linesは待ちがなければ空():
-    assert watch.notify_lines({"pending": 0, "conflicts": 0}) == []
 
 
 def test_snapshotは原本だけを相対パスで返し_ノートと予約名は含めない(vault):

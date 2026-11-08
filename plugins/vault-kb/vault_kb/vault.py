@@ -22,10 +22,9 @@ KNOWLEDGE_NAME = "40_knowledge"  # 案件に属さないノウハウ。<区分>/
 KNOWLEDGE_PROJECT = "knowledge"  # 40_knowledge の案件名
 PROJECT_ROOTS = (PROJECTS_NAME, ARCHIVE_NAME)
 USER_FOLDERS = ("10_daily", "50_prompts", "90_attachments")  # 利用者の領域
-OBSIDIAN_ASSETS = Path(__file__).resolve().parent.parent / "obsidian"  # テンプレートと Base の原本
+OBSIDIAN_ASSETS = Path(__file__).resolve().parent.parent / "obsidian"  # テンプレートの原本
 ASSET_FOLDERS = {
     "templates": "91_templates",
-    "bases": "92_bases",
 }  # 原本のフォルダ → vault 内の名前
 DEFAULT_CATEGORY = "99_その他"
 OKF_VERSION = "0.2"
@@ -82,26 +81,15 @@ def is_supported(name: str) -> bool:
 
 
 _HIDDEN_ATTRIBUTE = 0x2
-_REPARSE_POINT = 0x400  # シンボリックリンク・ジャンクションなど（先が vault の外のことがある）
-
-
-def is_link(path: Path) -> bool:
-    """リンクか（壊れたリンクを含む）。存在しないパスは False。"""
-    try:
-        attributes = getattr(os.lstat(path), "st_file_attributes", 0)
-    except FileNotFoundError:
-        return False
-    return path.is_symlink() or bool(attributes & _REPARSE_POINT)
 
 
 def walk(root: Path) -> tuple[list[Path], list[Path]]:
-    """root の下の (フォルダ, ファイル)。リンクの先はたどらない（vault の外を動かさない）。"""
+    """root の下の (フォルダ, ファイル)。"""
     folders: list[Path] = []
     files: list[Path] = []
     for here, names, found in os.walk(root):
-        names[:] = [n for n in names if not is_link(Path(here) / n)]
         folders += [Path(here) / name for name in names]
-        files += [Path(here) / name for name in found if not is_link(Path(here) / name)]
+        files += [Path(here) / name for name in found]
     return folders, files
 
 
@@ -187,16 +175,14 @@ class Vault:
         found = []
         for name in PROJECT_ROOTS:
             folder = self.root / name
-            if folder.is_dir() and not is_link(folder):  # リンクの先は vault の外のことがある
+            if folder.is_dir():
                 children = sorted(folder.iterdir())
                 found += [
-                    (f.name, f)
-                    for f in children
-                    if f.is_dir() and not f.name.startswith(".") and not is_link(f)
+                    (f.name, f) for f in children if f.is_dir() and not f.name.startswith(".")
                 ]
         for name, project in ((SHARED_NAME, SHARED_PROJECT), (KNOWLEDGE_NAME, KNOWLEDGE_PROJECT)):
             folder = self.root / name
-            if folder.is_dir() and not is_link(folder):
+            if folder.is_dir():
                 found.append((project, folder))
         return found
 
@@ -233,22 +219,16 @@ class Vault:
 def init_vault(root: Path) -> Vault:
     vault = Vault(root)
     for name in (INBOX_NAME, PROJECTS_NAME, ARCHIVE_NAME, *USER_FOLDERS):
-        if not is_link(root / name):  # 壊れたリンクの上には作れない
-            (root / name).mkdir(parents=True, exist_ok=True)
+        (root / name).mkdir(parents=True, exist_ok=True)
     for name in (SHARED_NAME, KNOWLEDGE_NAME):
-        folder = root / name
-        if is_link(folder):
-            continue  # リンクの先（vault の外のことがある）には作らない
-        (folder / DEFAULT_CATEGORY).mkdir(parents=True, exist_ok=True)
+        (root / name / DEFAULT_CATEGORY).mkdir(parents=True, exist_ok=True)
     return vault
 
 
 def install_obsidian_assets(root: Path) -> None:
-    """同梱のテンプレートと Base を vault の 91_templates/・92_bases/ に置く（既存は残す）。"""
+    """同梱のテンプレートを vault の 91_templates/ に置く（既存は残す）。"""
     for source in sorted(OBSIDIAN_ASSETS.glob("*/*")):
         target = root / ASSET_FOLDERS[source.parent.name] / source.name
-        if is_link(target.parent):
-            continue  # リンクの先（vault の外のことがある）には書かない
         if not target.exists():
             target.parent.mkdir(exist_ok=True)
             shutil.copyfile(source, target)
