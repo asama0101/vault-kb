@@ -22,7 +22,7 @@ SHARED_PROJECT = "shared"  # 30_shared の案件名
 KNOWLEDGE_NAME = "40_knowledge"  # 案件に属さないノウハウ。<区分>/<原本>
 KNOWLEDGE_PROJECT = "knowledge"  # 40_knowledge の案件名
 PROJECT_ROOTS = (PROJECTS_NAME, ARCHIVE_NAME)
-USER_FOLDERS = ("10_daily", "50_prompts", "90_attachments")  # 利用者の領域
+USER_FOLDERS = ("10_daily", "90_attachments")  # 利用者の領域
 OBSIDIAN_ASSETS = Path(__file__).resolve().parent.parent / "obsidian"  # テンプレートの原本
 ASSET_FOLDERS = {
     "templates": "91_templates",
@@ -41,6 +41,7 @@ SUPPORTED_EXTENSIONS = {
     ".conf",
     ".html",
     ".htm",
+    ".csv",
 }
 RESERVED_NAMES = {"index.md", "log.md"}
 MAX_CATEGORY_NUMBER = 98

@@ -47,7 +47,7 @@ def test_is_ignoredは隠し_Office一時_OS_予約名を無視する(name, expe
         ("report.HTM", True),
         ("index.md", False),
         ("~$a.docx", False),
-        ("a.csv", False),
+        ("a.csv", True),
     ],
     ids=[
         "大文字拡張子",
@@ -60,7 +60,7 @@ def test_is_ignoredは隠し_Office一時_OS_予約名を無視する(name, expe
         "大文字htm",
         "予約名",
         "一時",
-        "未対応",
+        "csv",
     ],
 )
 def test_is_supportedは対応拡張子で無視しないものだけ(name, expected):
@@ -124,7 +124,7 @@ def test_init_vaultは00_inbox_20_projects_80_archive_利用者の領域_30_shar
     assert vault.root == vault.root == root
     for name in ("00_inbox", "20_projects", "80_archive"):
         assert (root / name).is_dir()
-    for name in ("10_daily", "50_prompts", "90_attachments"):
+    for name in ("10_daily", "90_attachments"):
         assert (root / name).is_dir()
     assert (root / "30_shared" / "99_その他").is_dir()
     assert (root / "40_knowledge" / "99_その他").is_dir()

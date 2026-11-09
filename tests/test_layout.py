@@ -39,7 +39,6 @@ def test_init_vaultはvaultの中に8つのフォルダを作りvault_kbは作�
         "20_projects",
         "30_shared",
         "40_knowledge",
-        "50_prompts",
         "80_archive",
         "90_attachments",
     ]
@@ -83,7 +82,6 @@ def test_locationは区分より下のファイルだけ案件と区分を返す
 def test_利用者の領域とvault直下のファイルは片づけの対象にならない(vault, data_dir):
     for rel in (
         "10_daily/2026-10-31.md",
-        "50_prompts/指示.md",
         "90_attachments/図.pdf",
         "91_templates/議事録.md",
         "直下.txt",

@@ -15,12 +15,9 @@ from vault_kb.cli import main
 
 KB = Path(__file__).resolve().parent.parent / "plugins" / "vault-kb" / "kb.py"
 TEMPLATES = [
-    "Claude指示プロンプト.md",
     "デイリーノート.md",
     "ノウハウ.md",
     "プロジェクト概要.md",
-    "メモ.md",
-    "メール下書き.md",
     "議事録.md",
 ]
 TEXT = "第3四半期の販売計画と予算の見直しについて、各部門の数値を確認する"
@@ -66,7 +63,7 @@ def test_configureはvault直下に土台のフォルダとindex_mdとlog_mdを�
     assert check_bundle(base) == []
 
 
-def test_configureはtemplatesに7種類のテンプレートだけを置く(configured):
+def test_configureはtemplatesに4種類のテンプレートだけを置く(configured):
     root, _ = configured
 
     assert sorted(p.name for p in (root / "91_templates").iterdir()) == sorted(TEMPLATES)
@@ -109,7 +106,7 @@ def test_テンプレートを区分に置いてもノートと見なされな�
         target = folder / name
         target.write_bytes((root / "91_templates" / name).read_bytes())
         assert not is_note(read_frontmatter(target)), name
-    assert len(list(folder.iterdir())) == len(TEMPLATES) == 7
+    assert len(list(folder.iterdir())) == len(TEMPLATES) == 4
 
 
 def test_configureは既存のlog_mdを消さない(tmp_path):

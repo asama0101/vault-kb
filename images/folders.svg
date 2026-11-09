@@ -26,13 +26,12 @@
   <text x="34" y="388" font-size="13" fill="#1b2a6b">どの案件にも 99_その他 の区分がある</text>
 
   <!-- 利用者のフォルダ -->
-  <rect x="460" y="48" width="320" height="172" fill="#ffffff" stroke="#555" stroke-width="2" stroke-dasharray="7 4"/>
+  <rect x="460" y="48" width="320" height="146" fill="#ffffff" stroke="#555" stroke-width="2" stroke-dasharray="7 4"/>
   <text x="474" y="74" font-size="15" font-weight="bold" fill="#222">利用者のフォルダ（動かさない）</text>
   <text x="474" y="102" font-size="14" fill="#222"><tspan font-weight="bold">10_daily/</tspan>　デイリーノート</text>
-  <text x="474" y="128" font-size="14" fill="#222"><tspan font-weight="bold">50_prompts/</tspan>　Claude 指示プロンプト</text>
-  <text x="474" y="154" font-size="14" fill="#222"><tspan font-weight="bold">90_attachments/</tspan>　添付ファイル</text>
-  <text x="474" y="180" font-size="14" fill="#222"><tspan font-weight="bold">91_templates/</tspan>　テンプレート 7 種類</text>
-  <text x="474" y="206" font-size="13" fill="#222">検索の対象外。ノートも作らない</text>
+  <text x="474" y="128" font-size="14" fill="#222"><tspan font-weight="bold">90_attachments/</tspan>　添付ファイル</text>
+  <text x="474" y="154" font-size="14" fill="#222"><tspan font-weight="bold">91_templates/</tspan>　テンプレート 4 種類</text>
+  <text x="474" y="180" font-size="13" fill="#222">検索の対象外。ノートも作らない</text>
 
   <!-- ノートと記録 -->
   <rect x="460" y="262" width="320" height="192" rx="14" fill="#fff4e0" stroke="#e8590c" stroke-width="2"/>
