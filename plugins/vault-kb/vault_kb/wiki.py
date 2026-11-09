@@ -222,7 +222,7 @@ def _check_query(vault: Vault, request: dict[str, Any]) -> dict[str, Any]:
     file = _md_name(request, "file")
     page = read_page(vault.wiki_dir / "queries" / file)
     meta = page[0] if page else {}
-    evidence = meta.get("evidence")
+    evidence = meta["sources"] if "sources" in meta else meta.get("evidence")  # evidence は旧い鍵
     valid = _valid_sources(evidence)
     now = {e["resource"]: e["sha256"] for e in _entries(vault)}
     used = evidence if valid else []
@@ -391,10 +391,13 @@ def _plan_page(
     body = _replace_moved(body, moves)
     if len(_STRIKE.findall(body)) < len(_STRIKE.findall(old_body)):
         raise ValueError("取り消し線が減っています。古い記述は消さず、取り消し線にしてください")
+    what = name if kind == "project" else f"テーマ「{name}」"
     new_meta = {
         "type": "synthesis",
+        "title": name,
+        "description": f"{what}の統合ページ（ノート {len(entries)} 件）",
         kind: name,
-        "timestamp": now.isoformat(),
+        "generated": bundle.generated(now),
         "sources_digest": current,
         "sources": [
             {"resource": e["resource"], "sha256": e["sha256"]}
@@ -403,6 +406,11 @@ def _plan_page(
         ],
         "unread": unread,
     }
+    # verified: 全体の Lint で本文を書いたときだけ付ける。移動だけの更新（本文は同じ）は引き継ぐ
+    if op.get("body") is not None and linted:
+        new_meta["verified"] = bundle.generated(now)
+    elif op.get("body") is None and isinstance(meta.get("verified"), dict):
+        new_meta["verified"] = meta["verified"]
     writes: Write = []
     if page is not None:  # 1 世代だけ退避する
         backup = _inside(vault, vault.wiki_dir / ".bak" / kind / f"{name}.md")
@@ -444,15 +452,46 @@ def _plan_query(
         file, number = f"{stem}.md", 2
         while (folder / file).exists() or folder / file in planned:
             file, number = f"{stem}-{number}.md", number + 1
+    sources = [{"resource": r, "sha256": existing[r]} for r in dict.fromkeys(evidence)]
     meta = {
         "type": "query",
+        "title": question,
+        "description": f"質問「{question}」への回答（出典 {len(sources)} 件）",
         "question": question,
-        "timestamp": now.isoformat(),
-        "evidence": [{"resource": r, "sha256": existing[r]} for r in dict.fromkeys(evidence)],
+        "generated": bundle.generated(now),
+        "sources": sources,
         "scope": scope,
         "scope_digest": scope_digest(vault, scope),
     }
     return _inside(vault, folder / file), bundle.note_text(meta, answer)
+
+
+_INDEX_SECTIONS = (
+    ("projects", "統合ページ"),
+    ("themes", "テーマページ"),
+    ("queries", "保存した回答"),
+)
+
+
+def write_wiki_index(vault: Vault) -> None:
+    """.wiki/index.md を作り直す（OKF の index.md。frontmatter なし）。保存した回答は新しい順。"""
+    text = "# wiki\n"
+    for folder, heading in _INDEX_SECTIONS:
+        paths = sorted((vault.wiki_dir / folder).glob("*.md"), reverse=folder == "queries")
+        lines = []
+        for path in paths:
+            page = read_page(path)
+            meta = page[0] if page else {}
+            title = meta.get("title")
+            description = meta.get("description")
+            description = " ".join(description.split()) if isinstance(description, str) else ""
+            link = bundle.link(
+                f"{folder}/{path.name}", title if isinstance(title, str) and title else path.stem
+            )
+            lines.append(f"- {link}" + (f" — {description}" if description else "") + "\n")
+        if lines:
+            text += f"\n## {heading}\n\n{''.join(lines)}"
+    atomic_write(vault.wiki_dir / "index.md", text)
 
 
 def apply(vault: Vault, data_dir: Path, request: dict[str, Any], now: datetime) -> dict[str, Any]:
@@ -492,6 +531,8 @@ def apply(vault: Vault, data_dir: Path, request: dict[str, Any], now: datetime) 
             atomic_write(path, text)
         if logs:
             bundle.append_log(vault, logs, now)
+        if writes:
+            write_wiki_index(vault)  # 派生物なので、ログのあとに作り直す
         return {"written": [vault.rel(path) for path in written], "logged": len(logs)}
     finally:
         release(data_dir)

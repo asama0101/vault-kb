@@ -474,6 +474,7 @@ def _write_item_note(
     if place is None:
         raise ValueError(f"案件・区分の下にありません: {vault.rel(original)}")
     meta = bundle.read_frontmatter(note_path) if item["kind"] == "changed" else {}
+    meta.pop("timestamp", None)  # 2.2.0 までの時刻。generated に置き換える
     body, reason = converted
     size, mtime_ns = convert.stat_of(original)
     client = bundle.canonical_client(clients, item["client"])
@@ -483,7 +484,7 @@ def _write_item_note(
         "description": item["description"] or reason or "",
         "resource": original.relative_to(vault.root).as_posix(),
         "tags": item["tags"],
-        "timestamp": now.isoformat(),
+        "generated": bundle.generated(now),
         "project": place[0],
         "category": place[1],
         "client": client,

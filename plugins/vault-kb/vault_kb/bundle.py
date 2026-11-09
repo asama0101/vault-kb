@@ -6,11 +6,13 @@ import json
 import os
 import re
 import unicodedata
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from vault_kb import __version__
 from vault_kb.vault import (
     ARCHIVE_NAME,
     INBOX_NAME,
@@ -38,6 +40,7 @@ NOTE_KEYS = (
     "description",
     "resource",
     "tags",
+    "generated",
     "timestamp",
     "project",
     "category",
@@ -92,8 +95,41 @@ def _head_lines(path: Path) -> list[str] | None:
         size *= 2
 
 
+def _strip_slash(value: Any) -> Any:
+    """束相対（先頭 /）の resource を vault 相対に戻す。`//` や `/` だけの値は外さない。"""
+    if isinstance(value, str) and len(value) > 1 and value[0] == "/" and value[1] != "/":
+        return value[1:]
+    return value
+
+
+def _add_slash(value: Any) -> Any:
+    """vault 相対の resource を束相対（先頭 /）にする。すでに先頭が / なら重ねない。"""
+    if isinstance(value, str) and value and value[0] != "/":
+        return f"/{value}"
+    return value
+
+
+def _map_resources(meta: dict[str, Any], convert: Callable[[Any], Any]) -> dict[str, Any]:
+    """resource と、sources の各項目の resource に convert をかけた写しを返す。"""
+    mapped = dict(meta)
+    if "resource" in mapped:
+        mapped["resource"] = convert(mapped["resource"])
+    if isinstance(mapped.get("sources"), list):
+        mapped["sources"] = [
+            {**item, "resource": convert(item["resource"])}
+            if isinstance(item, dict) and "resource" in item
+            else item
+            for item in mapped["sources"]
+        ]
+    return mapped
+
+
 def read_frontmatter(path: Path) -> dict[str, Any]:
-    """ノートの frontmatter。JSON の値と、Obsidian が書き直した形の両方を読む。"""
+    """ノートの frontmatter。JSON の値と、Obsidian が書き直した形の両方を読む。
+
+    resource は先頭の `/`（OKF の束相対）を外し、vault 相対にして返す。
+    旧い形（先頭 `/` なし）も読める。
+    """
     meta: dict[str, Any] = {}
     key = None
     for line in _head_lines(path) or []:
@@ -105,11 +141,20 @@ def read_frontmatter(path: Path) -> dict[str, Any]:
         elif match := _KEY_LINE.fullmatch(line):
             key = match[1].strip()
             meta[key] = _parse_value(match[2].strip())
-    return meta
+    return _map_resources(meta, _strip_slash)
+
+
+def generated(now: datetime) -> dict[str, str]:
+    """OKF の generated。by は `<producer>/<version>`、at は UTC オフセット付きの時刻。"""
+    return {"by": f"vault-kb/{__version__}", "at": now.isoformat()}
 
 
 def note_text(meta: dict[str, Any], body: str) -> str:
-    """ノートの全文。frontmatter は NOTE_KEYS の順、続けて足された鍵を `key: <json>` で書く。"""
+    """ノートの全文。frontmatter は NOTE_KEYS の順、続けて足された鍵を `key: <json>` で書く。
+
+    resource（と sources の各 resource）は、先頭に `/` を付けて書く（OKF の束相対）。
+    """
+    meta = _map_resources(meta, _add_slash)
     keys = [k for k in NOTE_KEYS if k in meta] + [k for k in meta if k not in NOTE_KEYS]
     head = "".join(f"{key}: {json.dumps(meta[key], ensure_ascii=False)}\n" for key in keys)
     return f"---\n{head}---\n\n{body.strip()}\n"
