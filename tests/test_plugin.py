@@ -71,7 +71,7 @@ def test_askは状態確認と片づけのコマンドだけを承認なしで�
 def test_askとlintはwikiのコマンドだけを足す(name):
     wiki = [c for c in allowed_commands(name) if c.startswith("wiki-")]
 
-    assert wiki == ["wiki-check *", "wiki-apply *"]
+    assert wiki == ["wiki-check *", "wiki-apply *", "wiki-lint"]
 
 
 LINT_TOOLS = [
@@ -80,7 +80,7 @@ LINT_TOOLS = [
     "Glob(//**/vault-kb/**)",
     *(
         f'Bash(python "${{CLAUDE_PLUGIN_ROOT}}/run.py" --data "${{CLAUDE_PLUGIN_DATA}}" {sub})'
-        for sub in ("status", "prepare", "apply *", "wiki-check *", "wiki-apply *")
+        for sub in ("status", "prepare", "apply *", "wiki-check *", "wiki-apply *", "wiki-lint")
     ),
     "Read(//**/references/reconcile.md)",
     "Read(//**/references/wiki.md)",

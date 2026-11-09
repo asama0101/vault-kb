@@ -1,6 +1,7 @@
 import json
 import os
 import queue
+import re
 import subprocess
 import sys
 import threading
@@ -348,7 +349,8 @@ def test_record_stopは未解消がなければStoppedだけをlogに足す(conf
     assert result.returncode == 0
     assert json.loads(result.stdout) == {"recorded": True, "unresolved": 0}
     lines = [x for x in (root / "log.md").read_text(encoding="utf-8").splitlines() if x]
-    assert lines[1:] == ["- **Stopped** 見張りを止めた"]
+    assert len(lines) == 2
+    assert re.fullmatch(r"- \d\d:\d\d \*\*Stopped\*\* 見張りを止めた", lines[1])
 
 
 def test_record_stopは未解消の件数をlogに足す(configured):
@@ -359,7 +361,25 @@ def test_record_stopは未解消の件数をlogに足す(configured):
 
     assert json.loads(result.stdout) == {"recorded": True, "unresolved": 1}
     log = (root / "log.md").read_text(encoding="utf-8")
-    assert "- **Stopped** 見張りを止めた（未解消 1 件）\n" in log
+    assert re.search(r"- \d\d:\d\d \*\*Stopped\*\* 見張りを止めた（未解消 1 件）\n", log)
+
+
+def test_wiki_lintは全案件の状態をJSONで返し何も書かない(configured):
+    root, data = configured
+    log_before = (root / "log.md").read_bytes()
+
+    result = kb(data, "wiki-lint")
+
+    assert result.returncode == 0, result.stderr
+    found = json.loads(result.stdout)
+    assert {p["name"]: p["state"] for p in found["projects"]} == {
+        "shared": "none",
+        "knowledge": "none",
+    }
+    assert (found["themes"], found["client_variants"]) == ([], [])
+    assert (root / "log.md").read_bytes() == log_before
+    assert not (root / ".wiki").exists()
+    assert not (data / "reconcile.lock").exists()
 
 
 def test_unwatchが止めた見張りのプロセスはstoppedを出して終了コード0で終わる(configured):

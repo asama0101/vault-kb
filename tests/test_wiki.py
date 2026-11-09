@@ -2,7 +2,7 @@ from datetime import UTC, datetime
 
 import pytest
 from helpers import make_note, put
-from vault_kb import bundle, watch
+from vault_kb import bundle, watch, wiki
 from vault_kb.lock import acquire
 from vault_kb.wiki import (
     FULL_READ_LIMIT,
@@ -424,7 +424,7 @@ def test_apply_pageは統合ページを作りfrontmatterを機械的に付けSy
         },
         "## 概要\n要約",
     )
-    assert f"- **Synthesized** {P}（ノート 2 件）\n" in log_text(vault)
+    assert f"- 09:30 **Synthesized** {P}（ノート 2 件）\n" in log_text(vault)
     assert check(vault, req())["action"] == "none"
     assert not (data_dir / "reconcile.lock").exists()
 
@@ -436,7 +436,7 @@ def test_apply_pageは統合ページを作りfrontmatterを機械的に付けSy
     assert meta["theme"] == "保守"
     assert "project" not in meta
     assert [s["resource"] for s in meta["sources"]] == sorted(selected)
-    assert "- **Synthesized** テーマ「保守」（ノート 2 件、2 案件）\n" in log_text(vault)
+    assert "- 09:30 **Synthesized** テーマ「保守」（ノート 2 件、2 案件）\n" in log_text(vault)
 
 
 def test_apply_pageはunreadをsourcesから除きunreadに入れる(vault, data_dir):
@@ -573,23 +573,73 @@ def test_apply_pageは存在しない案件_ノート1件の案件_themeの未�
     assert not (vault.wiki_dir / "themes").exists()
 
 
-def test_Synthesizedは本文つきのページだけに書き_回答の保存と移動だけの更新には書かない(
-    vault, data_dir
-):
+def test_Synthesizedは本文つきのページだけに書き_移動だけの更新には書かない(vault, data_dir):
     two(vault)
     (vault.root / "log.md").write_text("## 2026-11-07\n\n- **Filed** 旧\n", encoding="utf-8")
 
-    assert run(vault, data_dir, pop(vault), qop())["logged"] == 1
+    assert run(vault, data_dir, pop(vault))["logged"] == 1
 
-    line = f"- **Synthesized** {P}（ノート 2 件）\n"
+    line = f"- 09:30 **Synthesized** {P}（ノート 2 件）\n"
     after = f"## 2026-11-08\n\n{line}\n## 2026-11-07\n\n- **Filed** 旧\n"
     assert log_text(vault) == after
     move(vault, "a.pdf", "a2.pdf", "a")
     op = pop(vault)
     del op["body"]
     assert run(vault, data_dir, op)["logged"] == 0
-    assert run(vault, data_dir, qop())["logged"] == 0
     assert log_text(vault) == after
+
+
+def test_回答の保存はSavedを1行書き_上書きでも書く(vault, data_dir):
+    two(vault)
+
+    result = run(vault, data_dir, qop(evidence=[r("a.pdf")]))
+
+    name = f"{STAMP}-保守費.md"
+    assert result["logged"] == 1
+    assert log_text(vault) == f"## 2026-11-08\n\n- 09:30 **Saved** {name}\n"
+    run(vault, data_dir, qop(evidence=[r("a.pdf")], overwrite=name))
+    assert log_text(vault).count(f"**Saved** {name}") == 2
+
+
+def test_lintがtrueのページopはLintedを書き_Synthesizedの前に並ぶ(vault, data_dir):
+    two(vault)
+
+    result = run(vault, data_dir, pop(vault, lint=True))
+
+    assert result["logged"] == 2
+    log = log_text(vault)
+    assert f"- 09:30 **Linted** {P}\n" in log
+    assert log.index("**Synthesized**") < log.index("**Linted**")  # 同じ呼び出しの行は渡した順
+
+
+def test_lintがtrueのテーマページopはテーマ名のLintedを書く(vault, data_dir):
+    two(vault)
+    selected = [r("a.pdf"), r("b.pdf")]
+    op = {"op": "page", "kind": "theme", "name": "保守", "selected": selected, "body": "b"}
+    op["expected_digest"] = check(vault, theme(selected=selected))["digest"]
+
+    result = run(vault, data_dir, op | {"lint": True})
+
+    assert result["logged"] == 2
+    assert "- 09:30 **Linted** テーマ「保守」\n" in log_text(vault)
+
+
+def test_lintがtrueでも移動だけの更新にはLintedを書かない(vault, data_dir):
+    two(vault)
+    run(vault, data_dir, pop(vault, body=f"記述（出典: {r('a.pdf')}）"))
+    move(vault, "a.pdf", "a2.pdf", "a")
+    op = pop(vault, lint=True)
+    del op["body"]
+
+    assert run(vault, data_dir, op)["logged"] == 0
+
+
+def test_lintが真偽値でなければValueErrorで何も書かない(vault, data_dir):
+    two(vault)
+
+    with pytest.raises(ValueError, match="lint"):
+        run(vault, data_dir, pop(vault, lint="yes"))
+    assert not (vault.wiki_dir / "projects").exists()
 
 
 def test_applyはロックが取れなければbusyを返し何も書かない(vault, data_dir):
@@ -611,7 +661,7 @@ def test_apply_queryはevidenceのsha256とscope_digestをノートから取り_
     result = run(vault, data_dir, qop(evidence=[r("a.pdf")]))
 
     name = f"{STAMP}-保守費.md"
-    assert result == {"written": [f".wiki/queries/{name}"], "logged": 0}
+    assert result == {"written": [f".wiki/queries/{name}"], "logged": 1}
     meta, body = page_of(vault, f"queries/{name}")
     assert meta == {
         "type": "query",
@@ -771,3 +821,168 @@ def test_apply_pageの明示したunreadは対象外の資料を厳密に拒否�
 
     with pytest.raises(ValueError, match="unread"):
         run(vault, data_dir, pop(vault, unread=[r("gone.pdf")]))
+
+
+# ---- lint（機械 Lint。AI を使わず、全案件を読み取りだけで検査する） ----
+
+
+def lint_states(vault):
+    return {p["name"]: p["state"] for p in wiki.lint(vault)["projects"]}
+
+
+def page_for(vault, project, **meta):
+    sources = src(vault, project)
+    base = {
+        "type": "synthesis",
+        "project": project,
+        "sources": sources,
+        "sources_digest": digest(sources),
+    }
+    write_page(vault, f"projects/{project}.md", base | meta)
+
+
+def test_lintは案件名なしで全案件の統合ページの状態を返す(vault):
+    note(vault, "a.pdf")
+    note(vault, "b.pdf", sha="b")  # A社: ノート 2 件でページなし
+    note(vault, "x.pdf", project="別")  # 別: ノート 1 件でページなし
+    note(vault, "x.pdf", project="C社")
+    note(vault, "y.pdf", project="C社", sha="b")
+    page_for(vault, "C社")  # C社: 最新
+    note(vault, "x.pdf", project="D社")
+    note(vault, "y.pdf", project="D社", sha="b")
+    page_for(vault, "D社")
+    note(vault, "z.pdf", project="D社", sha="c")  # D社: ページのあとにノートが増えた
+
+    assert lint_states(vault) == {
+        P: "missing",
+        "別": "none",
+        "C社": "ok",
+        "D社": "stale",
+        "shared": "none",  # 初期設定で必ずある案件
+        "knowledge": "none",
+    }
+    stale = next(p for p in wiki.lint(vault)["projects"] if p["name"] == "D社")
+    assert (stale["added"], stale["changed"], stale["removed"], stale["moved"]) == (1, 0, [], [])
+    assert stale["note_count"] == 3
+
+
+def test_lintは消えた資料を参照切れとして案件の差に返す(vault):
+    for name, sha in (("a.pdf", "a"), ("b.pdf", "b"), ("c.pdf", "c")):
+        note(vault, name, sha=sha)
+    project_page(vault)
+    (vault.notes_dir / f"{r('a.pdf')}.md").unlink()
+
+    found = next(p for p in wiki.lint(vault)["projects"] if p["name"] == P)
+
+    assert found["state"] == "stale"
+    assert found["removed"] == [r("a.pdf")]
+
+
+def test_lintは資料が1件以下に減ってもページが消えた資料を指すならstaleにする(vault):
+    for name, sha in (("a.pdf", "a"), ("b.pdf", "b"), ("c.pdf", "c")):
+        note(vault, name, sha=sha)
+    project_page(vault)
+    (vault.notes_dir / f"{r('a.pdf')}.md").unlink()
+    (vault.notes_dir / f"{r('b.pdf')}.md").unlink()
+
+    found = next(p for p in wiki.lint(vault)["projects"] if p["name"] == P)
+
+    assert found["note_count"] == 1
+    assert found["state"] == "stale"  # check は none（2 件未満）だが、参照切れは見せる
+    assert found["removed"] == [r("a.pdf"), r("b.pdf")]
+
+
+def test_lintは移動を差に返し_unreadを持つページはstaleにする(vault):
+    two(vault)
+    project_page(vault)
+    move(vault, "a.pdf", "a2.pdf", "a")
+    moved = next(p for p in wiki.lint(vault)["projects"] if p["name"] == P)
+    assert moved["moved"] == [{"from": r("a.pdf"), "to": r("a2.pdf")}]
+    assert moved["state"] == "stale"
+
+    project_page(vault, unread=[r("b.pdf")], sources=src(vault)[:1])
+    assert lint_states(vault)[P] == "stale"
+
+
+def test_lintはsourcesが壊れた統合ページをbrokenにする(vault):
+    two(vault)
+    project_page(vault, sources="壊れた")
+
+    assert lint_states(vault)[P] == "broken"
+
+
+def test_lintはテーマページの参照切れと壊れたsourcesを返す(vault):
+    note(vault, "a.pdf")
+    write_page(
+        vault,
+        "themes/保守.md",
+        {
+            "type": "synthesis",
+            "theme": "保守",
+            "sources": [e(r("a.pdf"), "a" * 64), e(r("gone.pdf"), "g" * 64)],
+        },
+    )
+    write_page(vault, "themes/壊れ.md", {"type": "synthesis", "theme": "壊れ", "sources": 1})
+
+    themes = {t["name"]: t for t in wiki.lint(vault)["themes"]}
+
+    assert themes["保守"] == {"name": "保守", "broken": False, "missing_sources": [r("gone.pdf")]}
+    assert themes["壊れ"] == {"name": "壊れ", "broken": True, "missing_sources": []}
+
+
+def test_lintはテーマページの資料が移動しただけなら参照切れにしない(vault):
+    note(vault, "a.pdf")
+    note(vault, "b.pdf", sha="b")
+    write_page(
+        vault,
+        "themes/保守.md",
+        {
+            "type": "synthesis",
+            "theme": "保守",
+            "sources": [e(r("a.pdf"), "a" * 64), e(r("gone.pdf"), "g" * 64)],
+        },
+    )
+    move(vault, "a.pdf", "a2.pdf", "a")  # sha256 は同じで、パスだけ変わった
+
+    themes = {t["name"]: t for t in wiki.lint(vault)["themes"]}
+
+    assert themes["保守"]["missing_sources"] == [r("gone.pdf")]  # 移動した a.pdf は含まない
+
+
+def test_lintは全角半角や大文字小文字だけ違う取引先の表記を束ねて返す(vault):
+    note(vault, "a.pdf", client="A社")
+    note(vault, "b.pdf", client="Ａ社", sha="b")  # 全角の A
+    note(vault, "c.pdf", client="B社", sha="c")
+    note(vault, "d.pdf", client=None, sha="d")
+
+    assert wiki.lint(vault)["client_variants"] == [["A社", "Ａ社"]]
+
+
+def test_lintは資料がなければ既定の案件だけが_noneで_テーマと表記揺れは空(vault):
+    result = wiki.lint(vault)
+
+    assert {p["name"]: p["state"] for p in result["projects"]} == {
+        "shared": "none",
+        "knowledge": "none",
+    }
+    assert (result["themes"], result["client_variants"]) == ([], [])
+
+
+def test_lintは統合ページの名前にできない案件フォルダがあっても止まらずinvalidを返す(vault):
+    put(vault, "20_projects/index/01_見積/a.pdf")  # check_folder_name が拒む予約語
+
+    states = lint_states(vault)
+
+    assert states["index"] == "invalid"
+    assert states["shared"] == "none"
+
+
+def test_lintは何も書かない(vault):
+    two(vault)
+    project_page(vault)
+    note(vault, "c.pdf", sha="c")
+    before = {p: p.read_bytes() for p in vault.root.rglob("*") if p.is_file()}
+
+    wiki.lint(vault)
+
+    assert {p: p.read_bytes() for p in vault.root.rglob("*") if p.is_file()} == before

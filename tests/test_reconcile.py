@@ -611,12 +611,9 @@ def test_applyはinboxの資料を案件区分へ名前のまま移し隣にノ�
     assert not (vault.root / "00_inbox" / "x.txt").exists()
     assert not (data_dir / "reconcile.lock").exists()
     assert list((data_dir / "staging").iterdir()) == []
-    src, dst = (
-        vault.root / "00_inbox" / "x.txt",
-        vault.root / "20_projects" / "A社" / "01_見積" / "x.txt",
-    )
     assert result["done"] == [
-        f"**Filed** x.txt → A社/01_見積（見積書、A社、2026-10-15） — 元: {src} / 先: {dst}"
+        "**Filed** x.txt → A社/01_見積（見積書、A社、2026-10-15）"
+        " — 元: 00_inbox/x.txt / 先: 20_projects/A社/01_見積/x.txt"
     ]
     assert check_bundle(vault.root) == []
 
@@ -659,12 +656,9 @@ def test_applyは同名で中身が同じならinbox側を消しDiscardedを書�
             "original": str(vault.root / "20_projects" / "A社" / "01_見積" / "x.txt"),
         }
     ]
-    src, existing = (
-        vault.root / "00_inbox" / "x.txt",
-        vault.root / "20_projects" / "A社" / "01_見積" / "x.txt",
-    )
     assert result["done"] == [
-        f"**Discarded** x.txt（A社/01_見積 に同じ中身） — 元: {src} / 既存: {existing}"
+        "**Discarded** x.txt（A社/01_見積 に同じ中身）"
+        " — 元: 00_inbox/x.txt / 既存: 20_projects/A社/01_見積/x.txt"
     ]
     assert not (vault.root / "00_inbox" / "x.txt").exists()
     assert [p.name for p in (vault.root / "20_projects" / "A社" / "01_見積").iterdir()] == ["x.txt"]
@@ -720,7 +714,7 @@ def test_applyはunregisteredの原本を動かさずノートだけ書く(vault
     )
     assert result["done"] == [
         "**Filed** f.txt → A社/01_見積（見積書、A社、2026-10-15）"
-        f" — 元: {folder / 'f.txt'} / 先: {folder / 'f.txt'}"
+        " — 元: 20_projects/A社/01_見積/f.txt / 先: 20_projects/A社/01_見積/f.txt"
     ]
     assert not (vault.root / "無視される").exists()
     assert check_bundle(vault.root) == []
@@ -799,12 +793,9 @@ def test_移せないファイルはその1件だけerrorにして続ける(vaul
     assert not (vault.notes_dir / "20_projects" / "A社" / "01_見積" / "a.txt.md").exists()
     assert (vault.root / "index.md").exists()
     assert not (data_dir / "reconcile.lock").exists()
-    src, dst = (
-        vault.root / "00_inbox" / "b.txt",
-        vault.root / "20_projects" / "A社" / "01_見積" / "b.txt",
-    )
     assert result["done"] == [
-        f"**Filed** b.txt → A社/01_見積（見積書、A社、2026-10-15） — 元: {src} / 先: {dst}"
+        "**Filed** b.txt → A社/01_見積（見積書、A社、2026-10-15）"
+        " — 元: 00_inbox/b.txt / 先: 20_projects/A社/01_見積/b.txt"
     ]
 
 
@@ -1215,7 +1206,7 @@ def test_区分の下のサブフォルダの原本は動かさずノートを�
     assert (meta["project"], meta["category"]) == ("A社", "01_見積")
     assert result["done"] == [
         "**Filed** f.txt → A社/01_見積（見積書、A社、2026-10-15）"
-        f" — 元: {sub / 'f.txt'} / 先: {sub / 'f.txt'}"
+        " — 元: 20_projects/A社/01_見積/sub/f.txt / 先: 20_projects/A社/01_見積/sub/f.txt"
     ]
     index = (vault.notes_dir / "20_projects" / "A社" / "01_見積" / "index.md").read_text(
         encoding="utf-8"
@@ -1237,12 +1228,9 @@ def test_開いたままの資料はinboxに残り_作りかけのフォルダ�
 def test_取引先が空ならFiledの行に空の欄を書かない(vault, data_dir):
     make_txt(vault.root / "00_inbox" / "x.txt", TEXT)
     result = run_apply(vault, data_dir, {"client": ""})
-    src, dst = (
-        vault.root / "00_inbox" / "x.txt",
-        vault.root / "20_projects" / "A社" / "01_見積" / "x.txt",
-    )
     assert result["done"] == [
-        f"**Filed** x.txt → A社/01_見積（見積書、2026-10-15） — 元: {src} / 先: {dst}"
+        "**Filed** x.txt → A社/01_見積（見積書、2026-10-15）"
+        " — 元: 00_inbox/x.txt / 先: 20_projects/A社/01_見積/x.txt"
     ]
 
 

@@ -260,6 +260,64 @@ def check(vault: Vault, request: dict[str, Any]) -> dict[str, Any]:
     raise ValueError(f"kind は project・theme・query のどれかにしてください: {kind!r}")
 
 
+_STATE_OF_ACTION = {"create": "missing", "skip": "none", "none": "ok", "update": "stale"}
+
+
+def _lint_project(vault: Vault, name: str) -> dict[str, Any]:
+    """案件の統合ページの状態と、前回の材料との差（check と同じ判定）。"""
+    try:
+        checked = _check_page(vault, {"name": name}, "project")
+    except ValueError:  # 予約語など、統合ページの名前にできない案件フォルダ
+        return {"name": name, "state": "invalid"}
+    diff = checked["diff"]
+    state = "broken" if checked["broken"] else _STATE_OF_ACTION[checked["action"]]
+    if state == "ok" and (diff["removed"] or diff["moved"]):
+        state = "stale"  # ノートが 2 件未満に減ると check は none を返すが、参照切れは見せる
+    return {
+        "name": name,
+        "state": state,
+        "note_count": checked["note_count"],
+        "added": diff["added"],
+        "changed": diff["changed"],
+        "removed": diff["removed"],
+        "moved": diff["moved"],
+        "unread": checked["unread"],
+    }
+
+
+def _lint_themes(vault: Vault) -> list[dict[str, Any]]:
+    """テーマページごとに、sources が壊れているか、実在しない資料を指していないか。"""
+    folder = vault.wiki_dir / "themes"
+    if not folder.is_dir():
+        return []
+    current = _entries(vault)
+    found = []
+    for path in sorted(folder.glob("*.md")):
+        page = read_page(path)
+        sources = page[0].get("sources") if page else None
+        broken = not _valid_sources(sources)
+        missing = [] if broken else classify(sources, current)["removed"]  # 移動は除く
+        found.append({"name": path.stem, "broken": broken, "missing_sources": missing})
+    return found
+
+
+def _client_variants(vault: Vault) -> list[list[str]]:
+    """全角半角・大文字小文字・空白を畳むと同じで、表記が違う取引先の組。"""
+    groups: dict[str, list[str]] = {}
+    for name in bundle.clients(bundle.notes(vault)):
+        groups.setdefault(bundle.canonical_client(list(groups), name), []).append(name)
+    return [names for names in groups.values() if len(names) > 1]
+
+
+def lint(vault: Vault) -> dict[str, Any]:
+    """機械 Lint。AI を使わず、案件名なしで全案件を読み取りだけで検査する（何も書かない）。"""
+    return {
+        "projects": [_lint_project(vault, name) for name in bundle.projects(vault)],
+        "themes": _lint_themes(vault),
+        "client_variants": _client_variants(vault),
+    }
+
+
 def _replace_moved(text: str, moves: dict[str, str]) -> str:
     """移動した資料の旧 resource を新 resource に置き換える。
 
@@ -276,11 +334,19 @@ def _replace_moved(text: str, moves: dict[str, str]) -> str:
 Write = list[tuple[Path, str]]
 
 
-def _plan_page(vault: Vault, op: dict[str, Any], kind: str, now: datetime) -> tuple[Write, str]:
-    """統合ページ・テーマページの書き込み（退避を含む）と、log.md の行（移動だけなら空）。"""
+def _plan_page(
+    vault: Vault, op: dict[str, Any], kind: str, now: datetime
+) -> tuple[Write, list[str]]:
+    """統合ページ・テーマページの書き込み（退避を含む）と、log.md の行（移動だけなら空）。
+
+    op に "lint": true があれば、全体の Lint を実行した印として Linted の行も足す。
+    """
     name = _text(op, "name")
     check_folder_name(name)
     expected = _text(op, "expected_digest")
+    linted = op.get("lint", False)
+    if not isinstance(linted, bool):
+        raise ValueError("lint は true か false で指定してください")
     body = op.get("body")
     if body is not None and not isinstance(body, str):
         raise ValueError("body は文字列で指定してください")
@@ -343,12 +409,16 @@ def _plan_page(vault: Vault, op: dict[str, Any], kind: str, now: datetime) -> tu
         writes.append((backup, path.read_bytes().decode("utf-8", errors="replace")))
     writes.append((path, bundle.note_text(new_meta, body)))
     if op.get("body") is None:
-        return writes, ""
+        return writes, []
     if kind == "project":
-        return writes, f"**Synthesized** {name}（ノート {len(entries)} 件）"
-    found = [bundle.location(vault, vault.path(e["resource"])) for e in entries]
-    projects = len({loc[0] for loc in found if loc})
-    return writes, f"**Synthesized** テーマ「{name}」（ノート {len(entries)} 件、{projects} 案件）"
+        label = name
+        lines = [f"**Synthesized** {name}（ノート {len(entries)} 件）"]
+    else:
+        label = f"テーマ「{name}」"
+        found = [bundle.location(vault, vault.path(e["resource"])) for e in entries]
+        projects = len({loc[0] for loc in found if loc})
+        lines = [f"**Synthesized** {label}（ノート {len(entries)} 件、{projects} 案件）"]
+    return writes, lines + ([f"**Linted** {label}"] if linted else [])
 
 
 def _plan_query(
@@ -403,10 +473,11 @@ def apply(vault: Vault, data_dir: Path, request: dict[str, Any], now: datetime) 
                 kind = op.get("kind")
                 if kind not in ("project", "theme"):
                     raise ValueError(f"kind は project か theme にしてください: {kind!r}")
-                planned, line = _plan_page(vault, op, kind, now)
-                logs += [line] if line else []
+                planned, lines = _plan_page(vault, op, kind, now)
+                logs += lines
             elif op.get("op") == "query":
                 planned = [_plan_query(vault, op, now, writes)]
+                logs.append(f"**Saved** {planned[0][0].name}")
             else:
                 raise ValueError(f"op は page か query にしてください: {op.get('op')!r}")
             for path, text in planned:

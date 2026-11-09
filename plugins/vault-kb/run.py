@@ -399,7 +399,7 @@ def _approve(data: Path) -> int:
         plan = _plan_path(data)
         wiki_plan = _wiki_plan_path(data)
         if tool == "Bash":
-            subs = UNATTENDED | {"apply", "wiki-check", "wiki-apply"}
+            subs = UNATTENDED | {"apply", "wiki-check", "wiki-apply", "wiki-lint"}
             allowed = _is_own_command(tool_input["command"], data, plan, subs, wiki_plan)
         elif tool == "Monitor":
             allowed = _is_own_command(tool_input["command"], data, plan, {"watch"})

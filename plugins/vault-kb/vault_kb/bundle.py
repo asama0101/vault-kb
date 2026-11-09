@@ -401,11 +401,14 @@ def write_indexes(vault: Vault) -> None:
 
 
 def append_log(vault: Vault, entries: list[str], now: datetime) -> None:
-    """log.md の今日の見出しの直後に entries を足す（見出しがなければ先頭に作る）。"""
+    """log.md の今日の見出しの直後に entries を足す（見出しがなければ先頭に作る）。
+
+    各行は `- HH:MM <entry>` の形にする（時刻は now）。
+    """
     path = vault.root / "log.md"
     existing = path.read_text(encoding="utf-8") if path.exists() else ""
     heading = f"## {now.date().isoformat()}\n"
-    lines = "".join(f"- {entry}\n" for entry in entries)
+    lines = "".join(f"- {now:%H:%M} {entry}\n" for entry in entries)
     if existing.startswith(heading):
         rest = existing[len(heading) :].removeprefix("\n")
         text = f"{heading}\n{lines}{rest}"
