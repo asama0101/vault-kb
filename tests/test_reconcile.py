@@ -11,7 +11,7 @@ from helpers import make_note, original_rel, put
 from markitdown import MarkItDown
 from okf_check import check_bundle
 from sample_docs import make_pdf, make_txt
-from vault_kb import convert, reconcile
+from vault_kb import __version__, convert, reconcile
 from vault_kb.bundle import read_frontmatter, write_indexes
 from vault_kb.lock import Busy, acquire, release
 from vault_kb.reconcile import (
@@ -595,6 +595,11 @@ def test_applyはinboxの資料を案件区分へ名前のまま移し隣にノ�
     note = vault.notes_dir / "20_projects" / "A社" / "01_見積" / "x.txt.md"
     assert (folder / "x.txt").read_text(encoding="utf-8") == TEXT
     meta = read_frontmatter(note)
+    assert "timestamp" not in meta
+    assert meta["generated"]["by"] == f"vault-kb/{__version__}"
+    assert (
+        datetime.fromisoformat(meta["generated"]["at"]).utcoffset() is not None
+    )  # OKF は UTC オフセット必須
     assert (meta["resource"], meta["category"], meta["project"]) == (
         "20_projects/A社/01_見積/x.txt",
         "01_見積",
@@ -741,6 +746,8 @@ def test_applyはchangedのノートを新しい本文と項目で書き直しRe
     note = vault.note_path(original)
     meta = read_frontmatter(note)
     assert (meta["title"], meta["date"], meta["aliases"]) == ("新しい題", None, ["別名"])
+    assert "timestamp" not in meta  # 旧い時刻は引き継がず、generated に置き換える
+    assert meta["generated"]["by"] == f"vault-kb/{__version__}"
     assert meta["sha256"] == convert.sha256_of(original)
     text = note.read_text(encoding="utf-8")
     assert new_text in text

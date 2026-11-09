@@ -2,7 +2,8 @@ from datetime import UTC, datetime
 
 import pytest
 from helpers import make_note, put
-from vault_kb import bundle, watch, wiki
+from okf_check import check_bundle
+from vault_kb import __version__, bundle, watch, wiki
 from vault_kb.lock import acquire
 from vault_kb.wiki import (
     FULL_READ_LIMIT,
@@ -276,9 +277,9 @@ def test_check_themeはselectedの存在しないresourceをunknownに返す(vau
     assert result["action"] == "create"
 
 
-def query(vault, evidence, scope=None):
+def query(vault, evidence, scope=None, key="sources"):
     scope = scope if scope is not None else [P]
-    meta = {"type": "query", "evidence": evidence, "scope": scope}
+    meta = {"type": "query", key: evidence, "scope": scope}
     write_page(vault, "queries/q.md", meta | {"scope_digest": scope_digest(vault, scope)})
 
 
@@ -304,6 +305,33 @@ def test_check_queryはevidenceのsha256が違うとchanged_空ならreusableで
     query(vault, "壊れ")
     assert check(vault, ask)["empty"] is True
     assert check(vault, {"kind": "query", "file": "none.md"})["exists"] is False
+
+
+def test_check_queryは旧い鍵evidenceで保存された回答も同じ判定で読む(vault):
+    note(vault, "a.pdf")
+    r = f"20_projects/{P}/01_見積/a.pdf"
+    ask = {"kind": "query", "file": "q.md"}
+
+    query(vault, [{"resource": r, "sha256": "a" * 64}], key="evidence")
+    assert check(vault, ask)["reusable"] is True
+
+    query(vault, [{"resource": r, "sha256": "f" * 64}], key="evidence")
+    assert check(vault, ask)["changed"] == [r]
+
+
+def test_check_queryはsourcesがあればevidenceより優先する(vault):
+    note(vault, "a.pdf")
+    r = f"20_projects/{P}/01_見積/a.pdf"
+    meta = {
+        "type": "query",
+        "sources": [{"resource": r, "sha256": "a" * 64}],
+        "evidence": [{"resource": r, "sha256": "f" * 64}],  # 古い鍵は見ない
+        "scope": [P],
+        "scope_digest": scope_digest(vault, [P]),
+    }
+    write_page(vault, "queries/q.md", meta)
+
+    assert check(vault, {"kind": "query", "file": "q.md"})["reusable"] is True
 
 
 def test_check_queryは同じ範囲に資料が追加されるとscope_changedでreusableでない(vault):
@@ -344,6 +372,7 @@ def test_checkは区切り文字を含む名前_型の不正なrequestをValueEr
 
 NOW = datetime(2026, 11, 8, 9, 30, 15, tzinfo=UTC)
 STAMP = "20261108-093015"
+GENERATED = {"by": f"vault-kb/{__version__}", "at": NOW.isoformat()}
 
 
 def r(name, project=P):
@@ -416,8 +445,10 @@ def test_apply_pageは統合ページを作りfrontmatterを機械的に付けSy
     assert page_of(vault) == (
         {
             "type": "synthesis",
+            "title": P,
+            "description": f"{P}の統合ページ（ノート 2 件）",
             "project": P,
-            "timestamp": NOW.isoformat(),
+            "generated": GENERATED,
             "sources_digest": digest(sources),
             "sources": sources,
             "unread": [],
@@ -434,6 +465,10 @@ def test_apply_pageは統合ページを作りfrontmatterを機械的に付けSy
     assert run(vault, data_dir, op)["written"] == [".wiki/themes/保守.md"]
     meta, _ = page_of(vault, "themes/保守.md")
     assert meta["theme"] == "保守"
+    assert (meta["title"], meta["description"]) == (
+        "保守",
+        "テーマ「保守」の統合ページ（ノート 2 件）",
+    )
     assert "project" not in meta
     assert [s["resource"] for s in meta["sources"]] == sorted(selected)
     assert "- 09:30 **Synthesized** テーマ「保守」（ノート 2 件、2 案件）\n" in log_text(vault)
@@ -634,12 +669,105 @@ def test_lintがtrueでも移動だけの更新にはLintedを書かない(vault
     assert run(vault, data_dir, op)["logged"] == 0
 
 
+def test_lintがtrueのページopはverifiedを書き_ふつうの更新では書かず_次の更新で外す(
+    vault, data_dir
+):
+    two(vault)
+
+    run(vault, data_dir, pop(vault))
+    assert "verified" not in page_of(vault)[0]
+
+    run(vault, data_dir, pop(vault, lint=True))
+    assert page_of(vault)[0]["verified"] == GENERATED
+
+    run(vault, data_dir, pop(vault))  # 本文を書き直すと、確認した内容ではなくなる
+    assert "verified" not in page_of(vault)[0]
+
+
+def test_移動だけの更新はverifiedを引き継ぐ(vault, data_dir):
+    two(vault)
+    run(vault, data_dir, pop(vault, body=f"記述（出典: {r('a.pdf')}）", lint=True))
+    move(vault, "a.pdf", "a2.pdf", "a")
+    op = pop(vault)
+    del op["body"]
+
+    run(vault, data_dir, op)
+
+    assert page_of(vault)[0]["verified"] == GENERATED  # 内容は変わっていない
+
+
+def test_移動だけの更新は辞書でないverifiedを引き継がない(vault, data_dir):
+    two(vault)
+    run(vault, data_dir, pop(vault, body=f"記述（出典: {r('a.pdf')}）"))
+    meta, body = page_of(vault)
+    write_page(vault, f"projects/{P}.md", meta | {"verified": None}, body)  # 壊れた形
+    move(vault, "a.pdf", "a2.pdf", "a")
+    op = pop(vault)
+    del op["body"]
+
+    run(vault, data_dir, op)
+
+    assert "verified" not in page_of(vault)[0]  # null を書き写さない
+
+
+def test_wiki_index_mdは質問の改行を空白にして1行に保つ(vault, data_dir):
+    two(vault)
+
+    run(vault, data_dir, qop(question="保守費は？\n月額で", evidence=[r("a.pdf")]))
+
+    items = [x for x in wiki_index(vault).splitlines() if x.startswith("- ")]
+    assert len(items) == 1
+    assert items[0].endswith("— 質問「保守費は？ 月額で」への回答（出典 1 件）")
+
+
 def test_lintが真偽値でなければValueErrorで何も書かない(vault, data_dir):
     two(vault)
 
     with pytest.raises(ValueError, match="lint"):
         run(vault, data_dir, pop(vault, lint="yes"))
     assert not (vault.wiki_dir / "projects").exists()
+
+
+def wiki_index(vault):
+    return (vault.wiki_dir / "index.md").read_text(encoding="utf-8")
+
+
+def test_applyは書くたびにwiki直下のindex_mdを作り_ページと回答を説明つきで並べる(vault, data_dir):
+    two(vault)
+
+    run(vault, data_dir, pop(vault), qop(evidence=[r("a.pdf")]))
+
+    assert wiki_index(vault) == (
+        "# wiki\n\n"
+        "## 統合ページ\n\n"
+        f"- [{P}](<projects/{P}.md>) — {P}の統合ページ（ノート 2 件）\n\n"
+        "## 保存した回答\n\n"
+        f"- [保守費は？](<queries/{STAMP}-保守費.md>) — 質問「保守費は？」への回答（出典 1 件）\n"
+    )
+    assert check_bundle(vault.root) == []  # index.md に frontmatter がない
+
+
+def test_wiki_index_mdはテーマページも載せ_説明のない旧いページは題だけ並べる(vault, data_dir):
+    two(vault)
+    write_page(vault, "projects/旧.md", {"type": "synthesis", "project": "旧", "sources": []})
+    selected = [r("a.pdf"), r("b.pdf")]
+    op = {"op": "page", "kind": "theme", "name": "保守", "selected": selected, "body": "b"}
+    op["expected_digest"] = check(vault, theme(selected=selected))["digest"]
+
+    run(vault, data_dir, op)
+
+    text = wiki_index(vault)
+    theme_line = "- [保守](<themes/保守.md>) — テーマ「保守」の統合ページ（ノート 2 件）\n"
+    assert f"## テーマページ\n\n{theme_line}" in text
+    assert "- [旧](<projects/旧.md>)\n" in text  # description がなければ「 — …」を付けない
+
+
+def test_wiki_index_mdは何も書かなかったapplyでは作らない(vault, data_dir):
+    two(vault)
+
+    assert run(vault, data_dir) == {"written": [], "logged": 0}
+
+    assert not (vault.wiki_dir / "index.md").exists()
 
 
 def test_applyはロックが取れなければbusyを返し何も書かない(vault, data_dir):
@@ -665,9 +793,11 @@ def test_apply_queryはevidenceのsha256とscope_digestをノートから取り_
     meta, body = page_of(vault, f"queries/{name}")
     assert meta == {
         "type": "query",
+        "title": "保守費は？",
+        "description": "質問「保守費は？」への回答（出典 1 件）",
         "question": "保守費は？",
-        "timestamp": NOW.isoformat(),
-        "evidence": [{"resource": r("a.pdf"), "sha256": "a" * 64}],
+        "generated": GENERATED,
+        "sources": [{"resource": r("a.pdf"), "sha256": "a" * 64}],
         "scope": [P],
         "scope_digest": scope_digest(vault, [P]),
     }
@@ -772,14 +902,22 @@ def test_wikiのページは片づけに数えられない(vault, data_dir):
     bundle.write_indexes(vault)
     notes = bundle.notes(vault)
     pending = watch.status(vault, data_dir)["pending"]
-    indexes = {p: p.read_bytes() for p in vault.root.rglob("index.md")}
+
+    def indexes():  # 片づけ側の索引。.wiki/index.md は wiki-apply が作る別の索引
+        return {
+            p: p.read_bytes()
+            for p in vault.root.rglob("index.md")
+            if vault.wiki_dir not in p.parents
+        }
+
+    before = indexes()
 
     run(vault, data_dir, pop(vault), qop(evidence=[r("a.pdf")]))
     bundle.write_indexes(vault)
 
     assert bundle.notes(vault) == notes
     assert watch.status(vault, data_dir)["pending"] == pending
-    assert {p: p.read_bytes() for p in vault.root.rglob("index.md")} == indexes
+    assert indexes() == before
 
 
 def test_applyは原本_ノート_indexを書き換えない(vault, data_dir):
