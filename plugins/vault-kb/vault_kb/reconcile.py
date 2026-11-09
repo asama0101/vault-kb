@@ -554,7 +554,7 @@ def _apply_item(
                 where = "/".join(bundle.location(vault, original) or (folder.name,))
                 line = (
                     f"**Discarded** {source.name}（{where} に同じ中身）"
-                    f" — 元: {source} / 既存: {original}"
+                    f" — 元: {vault.rel(source)} / 既存: {vault.rel(original)}"
                 )
                 return (
                     {
@@ -607,7 +607,7 @@ def _apply_item(
         )
         line = (
             f"**Filed** {original.name} → {project}/{category}（{fields}）"
-            f" — 元: {source} / 先: {original}"
+            f" — 元: {vault.rel(source)} / 先: {vault.rel(original)}"
         )
     return (
         {

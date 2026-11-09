@@ -55,7 +55,9 @@ def plan_of(root: Path) -> Path:
     return root / ".vault-kb-plan.json"
 
 
-@pytest.mark.parametrize("sub", ["status", "prepare", "watch", "unwatch", "record-stop"])
+@pytest.mark.parametrize(
+    "sub", ["status", "prepare", "watch", "unwatch", "record-stop", "wiki-lint"]
+)
 def test_自分のrun_pyの片づけのコマンドを許可する(env, sub):
     data, _, head = env
 
@@ -103,6 +105,7 @@ def test_バックスラッシュ区切りの同じパスも許可する(env):
         "prepare && ls",
         "prepare | cat",
         "status status",
+        "wiki-lint extra",
         'apply "C:/x/other/.vault-kb-plan.json"',
         'apply "{plan}" extra',
         "apply",
@@ -118,6 +121,7 @@ def test_バックスラッシュ区切りの同じパスも許可する(env):
         "and",
         "パイプ",
         "引数過多",
+        "wiki-lint 引数過多",
         "別の計画",
         "apply 引数過多",
         "apply 引数なし",

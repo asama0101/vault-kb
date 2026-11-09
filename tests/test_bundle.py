@@ -4,6 +4,7 @@ from datetime import datetime
 
 import pytest
 from helpers import make_note, put
+from okf_check import check_bundle
 from vault_kb.bundle import (
     append_log,
     candidates,
@@ -406,8 +407,8 @@ def test_append_logは同じ日の見出しの直後に新しいものを挿入�
     text = (vault.root / "log.md").read_text(encoding="utf-8")
 
     assert text == (
-        "## 2026-11-01\n\n- **Moved** 三.xlsx\n\n"
-        "## 2026-10-31\n\n- **Filed** 二.xlsx → A/01_x\n- **Filed** 一.xlsx → A/01_x\n"
+        "## 2026-11-01\n\n- 08:00 **Moved** 三.xlsx\n\n"
+        "## 2026-10-31\n\n- 18:00 **Filed** 二.xlsx → A/01_x\n- 09:00 **Filed** 一.xlsx → A/01_x\n"
     )
 
 
@@ -421,7 +422,7 @@ def test_append_logは古い日付の見出しも消さない(vault):
     append_log(vault, ["**Filed** 今日"], datetime(2026, 11, 2, 9, 0))
 
     assert (vault.root / "log.md").read_text(encoding="utf-8") == (
-        "## 2026-11-02\n\n- **Filed** 今日\n\n## 2026-10-31\n\n- 新\n\n"
+        "## 2026-11-02\n\n- 09:00 **Filed** 今日\n\n## 2026-10-31\n\n- 新\n\n"
         "## 2026-01-01\n\n- 古1\n- 古2\n"
     )
 
@@ -432,7 +433,7 @@ def test_append_logは見出しより前の文章を残す(vault):
     append_log(vault, ["今日"], datetime(2026, 11, 2, 9, 0))
 
     assert (vault.root / "log.md").read_text(encoding="utf-8") == (
-        "## 2026-11-02\n\n- 今日\n\nメモ\n\n## 2026-10-31\n\n- 前\n"
+        "## 2026-11-02\n\n- 09:00 今日\n\nメモ\n\n## 2026-10-31\n\n- 前\n"
     )
 
 
@@ -492,11 +493,22 @@ def test_projectsとcategoriesはドットで始まるフォルダを除く(vaul
     assert categories(vault, "A") == ["01_x"]
 
 
+def test_時刻のない旧い行と時刻つきの新しい行が混ざってもlog_mdはOKFの検査に通る(vault):
+    _write_log(vault, "## 2026-10-31\n\n- **Filed** 旧\n")
+
+    append_log(vault, ["**Filed** 新"], datetime(2026, 11, 2, 9, 5))
+
+    assert (vault.root / "log.md").read_text(encoding="utf-8") == (
+        "## 2026-11-02\n\n- 09:05 **Filed** 新\n\n## 2026-10-31\n\n- **Filed** 旧\n"
+    )
+    assert check_bundle(vault.root) == []
+
+
 def test_append_logは一度に渡した複数の行を渡した順で並べる(vault):
     append_log(vault, ["一", "二", "三"], datetime(2026, 10, 31, 9, 0))
 
     assert (vault.root / "log.md").read_text(encoding="utf-8") == (
-        "## 2026-10-31\n\n- 一\n- 二\n- 三\n"
+        "## 2026-10-31\n\n- 09:00 一\n- 09:00 二\n- 09:00 三\n"
     )
 
 

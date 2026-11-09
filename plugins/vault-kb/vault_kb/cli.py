@@ -45,6 +45,7 @@ def _parser() -> argparse.ArgumentParser:
     wiki_check.add_argument("plan")
     wiki_apply = sub.add_parser("wiki-apply", help="計画（JSON）どおりに .wiki/ へ書く")
     wiki_apply.add_argument("plan")
+    sub.add_parser("wiki-lint", help="機械 Lint。全案件の統合ページの状態を返す（何も書かない）")
     sub.add_parser("reindex", help="index.md を作り直す")
     sub.add_parser("watch", help="vault の変化を 1 行ずつ出す（Ctrl+C か unwatch で終わる）")
     sub.add_parser("unwatch", help="見張りに停止の印を書き、確認事項を返す")
@@ -117,6 +118,8 @@ def _run(args: argparse.Namespace, data_dir: Path) -> dict[str, Any] | list[Any]
         if "busy" not in result:
             fixed.unlink(missing_ok=True)
         return result
+    if args.command == "wiki-lint":
+        return wiki.lint(vault)
     if args.command == "reindex":
         bundle.write_indexes(vault)
         return {"reindexed": True}
