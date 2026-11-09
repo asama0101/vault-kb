@@ -19,6 +19,7 @@ from vault_kb.vault import (
     NOTES_NAME,
     OKF_VERSION,
     PROJECT_ROOTS,
+    PROJECTS_NAME,
     RESERVED_FOLDED,
     SHARED_NAME,
     SHARED_PROJECT,
@@ -142,6 +143,19 @@ def _shallow(folder: Path) -> tuple[list[Path], list[Path]]:
 def projects(vault: Vault) -> list[str]:
     """案件名（名前順。20_projects・80_archive の案件と shared・knowledge）。"""
     return sorted({name for name, _ in vault.project_folders()})
+
+
+OVERVIEW_TYPE = "プロジェクト概要"  # テンプレートの type。置き場所は問わない（片づけで区分へ移る）
+
+
+def projects_without_overview(vault: Vault) -> list[str]:
+    """20_projects の案件のうち、配下に type が プロジェクト概要 の .md がないもの（名前順）。"""
+    return sorted(
+        name
+        for name, folder in vault.project_folders()
+        if folder.parent.name == PROJECTS_NAME
+        and not any(read_frontmatter(p).get("type") == OVERVIEW_TYPE for p in folder.rglob("*.md"))
+    )
 
 
 def _categories_in(folder: Path) -> list[str]:
@@ -357,14 +371,20 @@ def write_indexes(vault: Vault) -> None:
     vault.hide_notes_dir()
     _prune_indexes(vault)
     by_project, by_category = _group_notes(vault, notes(vault))
+    no_overview = set(projects_without_overview(vault))
     root_lines = []
     for project, folder in vault.project_folders():
         relative = folder.relative_to(vault.root).as_posix()
         notes_folder = vault.notes_dir / relative
         label = project + ("（アーカイブ）" if relative.startswith(f"{ARCHIVE_NAME}/") else "")
         in_project = by_project.get(folder, [])
+        mark = (
+            "・概要なし"
+            if relative.startswith(f"{PROJECTS_NAME}/") and project in no_overview
+            else ""
+        )
         root_lines.append(
-            f"- {link(f'{NOTES_NAME}/{relative}/index.md', label)} — {len(in_project)} 件\n"
+            f"- {link(f'{NOTES_NAME}/{relative}/index.md', label)} — {len(in_project)} 件{mark}\n"
         )
         project_lines = []
         for category in _categories_in(folder):

@@ -229,7 +229,7 @@ claude plugin uninstall vault-kb@vault-kb
 
 `/vault-kb:init` が、vault の中にフォルダを作る。ノートと記録は、AI が作る。ノートと `index.md` は片づけが、`.wiki/` は `/vault-kb:ask` と `/vault-kb:lint` が作る。`log.md` には、片づけと統合ページの更新が追記する。片づけが扱うのは、次の図の左の 5 つだけ。
 
-![vault の直下は 3 種類。片づけの対象の 5 フォルダ、利用者のフォルダの 5 つ、AI が作るノートと記録（.notes/・.wiki/・index.md・log.md）。](images/folders.svg)
+![vault の直下は 3 種類。片づけの対象の 5 フォルダ、利用者のフォルダの 3 つ、AI が作るノートと記録（.notes/・.wiki/・index.md・log.md）。](images/folders.svg)
 
 - 案件は `20_projects`・`80_archive` 直下のフォルダ、区分はその下のフォルダ。`30_shared`（案件名 `shared`）と `40_knowledge`（案件名 `knowledge`）は案件に属さない資料で、直下が区分になる。
 - `40_knowledge` の直下に置いたファイルは、片づけで区分のフォルダへ動く。既存の `40_knowledge` の中身も、最初の片づけで一括で区分に分かれる。
@@ -238,7 +238,7 @@ claude plugin uninstall vault-kb@vault-kb
 - ノートの先頭の項目欄（frontmatter）に、案件・区分・取引先・種類・日付・要約が入る。
 - `.notes/` は隠しフォルダ。見るには、エクスプローラーで「隠しファイルを表示」をオンにする。Obsidian には表示されず、検索にも出ない。
 - `.wiki/` も隠しフォルダ。統合ページ（`projects/`）・テーマページ（`themes/`）・保存した回答（`queries/`）が入る。上書き前の旧ページは `.bak/` に 1 世代だけ残る。
-- 案件・区分の `index.md` は `.notes/` の中にあり、片づけのたびに作り直される。根の `index.md` と `log.md` は、vault の直下にある。
+- 案件・区分の `index.md` は `.notes/` の中にあり、片づけのたびに作り直される。根の `index.md` と `log.md` は、vault の直下にある。 20_projects の案件にプロジェクト概要（`type: プロジェクト概要` のノート）がないときは、根の `index.md` の案件の行に「概要なし」が付き、片づけの結果にも出る。
 
 手で動かしてよいものと、触らないものは、次のとおり。
 
