@@ -18,6 +18,7 @@ from vault_kb.bundle import (
     originals,
     project_root_files,
     projects,
+    projects_without_overview,
     read_frontmatter,
     write_indexes,
     write_note,
@@ -265,7 +266,7 @@ def test_write_indexesは根にokf_version_案件と区分の一覧_区分はdat
 
     root = (vault.root / "index.md").read_text(encoding="utf-8")
     assert root.startswith('---\nokf_version: "0.2"\n---\n# vault-kb\n\n')
-    assert "- [A](<.notes/20_projects/A/index.md>) — 4 件\n" in root
+    assert "- [A](<.notes/20_projects/A/index.md>) — 4 件・概要なし\n" in root
     assert "- [shared](<.notes/30_shared/index.md>) — 0 件\n" in root
     project = (vault.notes_dir / "20_projects" / "A" / "index.md").read_text(encoding="utf-8")
     assert project == (
@@ -586,3 +587,29 @@ def test_write_indexesはUTF8で読めない索引も上書きして直す(vault
     write_indexes(vault)
 
     assert "vault-kb" in (vault.root / "index.md").read_text(encoding="utf-8")
+
+
+OVERVIEW = "---\ncreated: 2026-11-09\ntype: プロジェクト概要\n---\n## 目的\n".encode()
+
+
+def test_projects_without_overviewは20_projectsで概要のない案件だけを返す(vault):
+    put(vault, "20_projects/A/01_x/概要.md", OVERVIEW)  # 区分の中
+    put(vault, "20_projects/B/01_x/f.txt")  # 概要なし
+    put(vault, "20_projects/C/概要.md", OVERVIEW)  # 案件の直下
+    put(vault, "20_projects/E/メモ.md", "---\ntype: メモ\n---\n".encode())  # 別の type
+    put(vault, "80_archive/D/01_x/f.txt")  # アーカイブは対象外
+    put(vault, "30_shared/01_x/f.txt")  # shared は対象外
+
+    assert projects_without_overview(vault) == ["B", "E"]
+
+
+def test_write_indexesは概要のない案件の行にだけ概要なしを添える(vault):
+    make_note(vault, "A", "01_x", "a.xlsx")
+    make_note(vault, "B", "01_x", "b.xlsx")
+    put(vault, "20_projects/A/01_x/概要.md", OVERVIEW)
+
+    write_indexes(vault)
+
+    root = (vault.root / "index.md").read_text(encoding="utf-8")
+    assert "- [A](<.notes/20_projects/A/index.md>) — 1 件\n" in root
+    assert "- [B](<.notes/20_projects/B/index.md>) — 1 件・概要なし\n" in root

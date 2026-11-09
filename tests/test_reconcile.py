@@ -561,6 +561,24 @@ def run_apply(vault, data_dir, *overrides, now=NOW):
     return apply(vault, data_dir, plan, now)
 
 
+def test_applyは概要のない案件に片づけたときwarningsで知らせる(vault, data_dir):
+    make_txt(vault.root / "00_inbox" / "x.txt", TEXT)
+
+    result = run_apply(vault, data_dir, {})
+
+    assert result["warnings"] == ["概要なし: A社"]
+
+
+def test_applyは概要のある案件ではwarningsが空(vault, data_dir):
+    overview = "---\ntype: プロジェクト概要\n---\n## 目的\n"
+    put(vault, "20_projects/A社/01_見積/概要.md", overview.encode())
+    make_txt(vault.root / "00_inbox" / "x.txt", TEXT)
+
+    result = run_apply(vault, data_dir, {}, {})  # 概要.md も、ノートのない原本として項目に入る
+
+    assert result["warnings"] == []
+
+
 def test_applyはinboxの資料を案件区分へ名前のまま移し隣にノートを書く(vault, data_dir):
     make_txt(vault.root / "00_inbox" / "x.txt", TEXT)
     result = run_apply(vault, data_dir, {})

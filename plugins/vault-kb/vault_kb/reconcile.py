@@ -664,7 +664,17 @@ def _apply(vault: Vault, data_dir: Path, items: list[Item], now: datetime) -> di
     failure = _finish(vault, data_dir, done, now, shas)
     if failure:
         raise failure
-    return {"results": results, "done": done}
+    return {"results": results, "done": done, "warnings": _overview_warnings(vault, results)}
+
+
+def _overview_warnings(vault: Vault, results: list[Item]) -> list[str]:
+    """片づけた資料の案件のうち、プロジェクト概要のないものを知らせる。"""
+    filed = {
+        bundle.location(vault, Path(r["original"]))[0] for r in results if r["status"] == "filed"
+    }
+    return [
+        f"概要なし: {name}" for name in bundle.projects_without_overview(vault) if name in filed
+    ]
 
 
 def _finish(

@@ -9,6 +9,18 @@ TEXT = "Quarterly budget review for the sales team"
 JP_TEXT = "第3四半期の販売計画と予算の見直しについて、各部門の数値を確認する"
 
 
+@pytest.mark.parametrize("encoding", ["utf-8", "cp932"])
+def test_extractはcsvの本文を取り出す(tmp_path: Path, encoding) -> None:
+    path = tmp_path / "a.csv"
+    rows = ["項目,内容", f"計画,{JP_TEXT}"]
+    path.write_bytes("\r\n".join(rows).encode(encoding))
+
+    body, reason = extract(path)
+
+    assert JP_TEXT in body
+    assert reason is None
+
+
 @pytest.mark.parametrize(
     ("name", "make", "text"),
     [

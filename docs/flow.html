@@ -127,8 +127,8 @@
   <div class="step py" data-n="12" data-lane="Python">
     フォルダが見つからなければ「vault のフォルダが見つかりません」を返して何もしない。見つかれば次を行う。
     <ul>
-      <li>vault の中に標準のフォルダを作る（<code>00_inbox</code>、<code>10_daily</code>、<code>20_projects</code>、<code>30_shared/99_その他</code>、<code>40_knowledge/99_その他</code>、<code>50_prompts</code>、<code>80_archive</code>、<code>90_attachments</code>）。</li>
-      <li><code>91_templates</code> にテンプレート 7 種類を置く（同名があれば上書きしない）。</li>
+      <li>vault の中に標準のフォルダを作る（<code>00_inbox</code>、<code>10_daily</code>、<code>20_projects</code>、<code>30_shared/99_その他</code>、<code>40_knowledge/99_その他</code>、<code>80_archive</code>、<code>90_attachments</code>）。</li>
+      <li><code>91_templates</code> にテンプレート 4 種類を置く（同名があれば上書きしない）。</li>
       <li>vault のパスを設定ファイルに保存し、<code>index.md</code>（案件の一覧）と <code>log.md</code>（履歴）を作る。</li>
       <li>前の vault のファイルは動かさない。</li>
     </ul>
@@ -145,7 +145,7 @@
 <h2 id="ask">3. 資料を置いて質問する <small><code>/vault-kb:ask</code></small></h2>
 <div class="flow">
   <div class="head">ユーザー</div><div class="head">Claude</div><div class="head">裏方の処理（Python）</div>
-  <div class="step user" data-n="1" data-lane="ユーザー">資料（pptx・xlsx・pdf・docx・txt・md・log・cfg・conf・html・htm）を <code>00_inbox</code> に置く。</div>
+  <div class="step user" data-n="1" data-lane="ユーザー">資料（pptx・xlsx・pdf・docx・txt・md・log・cfg・conf・html・htm・csv）を <code>00_inbox</code> に置く。</div>
   <div class="step user" data-n="2" data-lane="ユーザー"><code>/vault-kb:ask ＜質問＞</code> と打つ（例: 「A 社の見積の保守費について資料に何と書いてある？」）。</div>
   <div class="step claude" data-n="3" data-lane="Claude">裏方に状態を聞く。<span class="tag auto">確認なし</span></div>
   <div class="step py" data-n="4" data-lane="Python">vault のパス、片づけ待ちの件数、別の片づけが進行中か（<code>busy</code>）を返す。</div>
@@ -354,7 +354,7 @@
     </ul>
   </div>
 </div>
-<p class="note">片づけが扱うのは <code>00_inbox</code>・<code>20_projects</code>・<code>30_shared</code>・<code>40_knowledge</code>・<code>80_archive</code> だけ。<code>10_daily</code>・<code>50_prompts</code>・<code>90_attachments</code>・<code>91_templates</code> と vault 直下のファイルは触らない。索引（<code>index.md</code>）は片づけのたびに作り直され、ノートは原本の中身が変わったとき（<b>Refreshed</b>）と移動に追従したとき（<b>Followed</b>）に書き直されるので、どちらも手で編集しても消える。</p>
+<p class="note">片づけが扱うのは <code>00_inbox</code>・<code>20_projects</code>・<code>30_shared</code>・<code>40_knowledge</code>・<code>80_archive</code> だけ。<code>10_daily</code>・<code>90_attachments</code>・<code>91_templates</code> と vault 直下のファイルは触らない。索引（<code>index.md</code>）は片づけのたびに作り直され、ノートは原本の中身が変わったとき（<b>Refreshed</b>）と移動に追従したとき（<b>Followed</b>）に書き直されるので、どちらも手で編集しても消える。</p>
 
 <!-- ============================================================ -->
 <h2 id="approve">10. 確認なしで動く仕組み</h2>
