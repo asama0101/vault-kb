@@ -27,7 +27,7 @@
 1. 過去の回答を裏取りする（`ask` だけ）。
    - 質問の語と言い換えで、Grep を `<vault>/.wiki/queries` に対して `glob: *.md` で実行する。候補を Read で読み、frontmatter の `question` が今の質問と似ているかを判断する。
    - 似た回答があれば、request `{"kind": "query", "file": "<ファイル名>.md"}`（`queries/` の中のファイル名だけ）で `wiki-check` を実行する。
-   - `reusable` が true のとき: 手がかりとして使う。`sources`（旧い回答は `evidence`）の各資料のノート（`<vault>/.notes/<resource>.md`。`resource` の先頭の `/` は外す）を読み直し、保存した回答の主張が一致するかを確かめる。確かめられた主張だけを使い、確かめられない部分は探し直す。
+   - `reusable` が true のとき: 手がかりとして使う。`sources`（旧い回答は `evidence`）の各資料のノート（`<vault>/.notes/<resource>.md`。`resource` の先頭の `/` は外す）を読み直し、保存した回答の主張が一致するかを確かめる。確かめられた主張だけを使い、確かめられない部分は探し直す。結果の `moved`（根拠の原本が同じ範囲内で動いた。`sha256` は同じ）が空でないときは、回答に保存されているのは旧いパス（`from`）で、ノートは動いた先（`to`）にある。ノートは `<vault>/.notes/<to>.md` で読み直す。答えたあと、手順 6 で `overwrite` にそのファイル名を入れて保存し直し、`evidence` には `to` のパスを入れる。
    - `reusable` が false のとき（`changed`・`missing` に資料がある、`scope_changed` が true、`empty` が true）は、その回答を使わず、新しく答える。同じ質問なら、手順 6 で `overwrite` にそのファイル名を入れる。`empty`（「資料からは確認できない」の回答）は手がかりにしない。
    - 出典は原本にする。保存した回答・統合ページ・テーマページを出典にしない。
 2. 統合ページを使うか決める。

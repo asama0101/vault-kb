@@ -10,7 +10,7 @@ from typing import Any
 
 from vault_kb import bundle
 from vault_kb.lock import Busy, acquire, release
-from vault_kb.vault import Vault, atomic_write, check_folder_name
+from vault_kb.vault import Vault, atomic_write, check_folder_name, fold_name
 
 READ_LIMIT = 30  # 1 回に読む資料の数
 FULL_READ_LIMIT = 100  # full のときの上限
@@ -79,10 +79,15 @@ def read_page(path: Path) -> tuple[dict[str, Any], str] | None:
     return bundle.read_frontmatter(path), "\n".join(lines[close + 1 :]).strip()
 
 
-def _entries(vault: Vault, folder: Path | None = None) -> list[dict[str, Any]]:
-    """原本が実在するノートの {resource, sha256, date}。folder があればその下の原本だけ。"""
+def _entries(
+    vault: Vault, folder: Path | None = None, notes: list[bundle.Note] | None = None
+) -> list[dict[str, Any]]:
+    """原本が実在するノートの {resource, sha256, date}。folder があればその下の原本だけ。
+
+    notes（bundle.notes(vault) の結果）を渡すと、全ノートを走査し直さずに使う。
+    """
     found = []
-    for note in bundle.notes(vault):
+    for note in bundle.notes(vault) if notes is None else notes:
         if not note.original.is_file():
             continue
         if folder is not None and not note.original.is_relative_to(folder):
@@ -98,17 +103,56 @@ def _entries(vault: Vault, folder: Path | None = None) -> list[dict[str, Any]]:
     return sorted(sorted_by_resource(found), key=lambda e: e["date"], reverse=True)
 
 
-def project_entries(vault: Vault, project: str) -> list[dict[str, Any]]:
-    """案件のフォルダの下に原本が実在するノートの一覧（date の新しい順、日付なしは最後）。"""
+class _Pool:
+    """全ノートの一覧（_entries の結果）と、案件ごとに選ぶための索引。
+
+    status・機械 Lint が、案件・回答の数だけ全ノートを走査し直さないための前処理。
+    索引は、各 resource の（畳んだ）上位のパス（20_projects、20_projects/A社 …）ごとの一覧。
+    """
+
+    def __init__(self, vault: Vault, entries: list[dict[str, Any]]) -> None:
+        self.vault = vault
+        self.entries = entries
+        self.shas = {e["resource"]: e["sha256"] for e in entries}
+        self.folders: dict[str, Path] = {}
+        for name, folder in vault.project_folders():
+            self.folders.setdefault(name, folder)  # 同名は先のもの（Vault.project_dir と同じ）
+        self._under: dict[str, list[dict[str, Any]]] = {}
+        for entry in entries:
+            parts = fold_name(entry["resource"]).split("/")
+            for end in range(1, len(parts)):
+                self._under.setdefault("/".join(parts[:end]), []).append(entry)
+
+    def project(self, name: str) -> list[dict[str, Any]]:
+        folder = self.folders.get(name)
+        if folder is None:
+            return []
+        return self._under.get(fold_name(self.vault.rel(folder)), [])
+
+
+def project_entries(vault: Vault, project: str, pool: _Pool | None = None) -> list[dict[str, Any]]:
+    """案件のフォルダの下に原本が実在するノートの一覧（date の新しい順、日付なしは最後）。
+
+    pool を渡すと、全ノートを走査し直さず、その索引から選ぶ。
+    """
+    if pool is not None:
+        return pool.project(project)
     folder = vault.project_dir(project)
     return [] if folder is None else _entries(vault, folder)
 
 
+def _scope_entries(
+    vault: Vault, scope: list[str], pool: _Pool | None = None
+) -> list[dict[str, Any]]:
+    """範囲の資料の一覧。scope が空なら vault 全体、そうでなければ指定した案件の分。"""
+    if not scope:
+        return _entries(vault) if pool is None else pool.entries
+    return [e for project in scope for e in project_entries(vault, project, pool)]
+
+
 def scope_digest(vault: Vault, scope: list[str]) -> str:
     """範囲の指紋。scope が空なら vault 全体、そうでなければ指定した案件の分。"""
-    if not scope:
-        return digest(_entries(vault))
-    return digest([e for project in scope for e in project_entries(vault, project)])
+    return digest(_scope_entries(vault, scope))
 
 
 def _valid_sources(value: Any) -> bool:
@@ -127,7 +171,9 @@ def _text(request: dict[str, Any], key: str) -> str:
     return value
 
 
-def _check_page(vault: Vault, request: dict[str, Any], kind: str) -> dict[str, Any]:
+def _check_page(
+    vault: Vault, request: dict[str, Any], kind: str, pool: _Pool | None = None
+) -> dict[str, Any]:
     """project・theme の状態。theme は selected の資料だけを対象にする。"""
     name = _text(request, "name")
     check_folder_name(name)
@@ -140,13 +186,13 @@ def _check_page(vault: Vault, request: dict[str, Any], kind: str) -> dict[str, A
     sources = [] if page is None or broken else meta["sources"]
     extra: dict[str, Any] = {}
     if kind == "project":
-        entries = project_entries(vault, name)
+        entries = project_entries(vault, name, pool)
         too_few = len(entries) < 2
     else:
         selected = request.get("selected")
         if not isinstance(selected, list) or not all(isinstance(r, str) for r in selected):
             raise ValueError("selected は文字列の一覧で指定してください")
-        existing = {e["resource"]: e for e in _entries(vault)}
+        existing = {e["resource"]: e for e in (_entries(vault) if pool is None else pool.entries)}
         entries = [existing[r] for r in dict.fromkeys(selected) if r in existing]
         deselected = [s["resource"] for s in sources if s["resource"] in existing]
         deselected = [r for r in deselected if r not in selected]
@@ -218,21 +264,35 @@ def _inside(vault: Vault, path: Path) -> Path:
     return path
 
 
-def _check_query(vault: Vault, request: dict[str, Any]) -> dict[str, Any]:
+def _check_query(
+    vault: Vault, request: dict[str, Any], pool: _Pool | None = None
+) -> dict[str, Any]:
     file = _md_name(request, "file")
     page = read_page(vault.wiki_dir / "queries" / file)
     meta = page[0] if page else {}
     evidence = meta["sources"] if "sources" in meta else meta.get("evidence")  # evidence は旧い鍵
     valid = _valid_sources(evidence)
-    now = {e["resource"]: e["sha256"] for e in _entries(vault)}
+    entries = _entries(vault) if pool is None else pool.entries
+    now = {e["resource"]: e["sha256"] for e in entries} if pool is None else pool.shas
     used = evidence if valid else []
     changed = [
         e["resource"] for e in used if e["resource"] in now and now[e["resource"]] != e["sha256"]
     ]
-    missing = [e["resource"] for e in used if e["resource"] not in now]
+    if all(e["resource"] in now for e in used):  # 根拠が全部ある（通常）。移動の判定は要らない
+        diff: dict[str, list[Any]] = {"removed": [], "moved": []}
+    else:  # 動かしただけ（sha256 が同じ）の資料は moved になる
+        diff = classify(used, entries)
+    missing = diff["removed"]
     scope = meta.get("scope")
     scope_ok = isinstance(scope, list) and all(isinstance(p, str) for p in scope)
-    scope_changed = not scope_ok or meta.get("scope_digest") != scope_digest(vault, scope)
+    # 範囲の指紋は、移動した資料を元の名前に戻して比べる（動かしただけで再利用を失わない）
+    back = {m["to"]: m["from"] for m in diff["moved"]}
+    scope_changed = not scope_ok or meta.get("scope_digest") != digest(
+        [
+            {**e, "resource": back.get(e["resource"], e["resource"])}
+            for e in _scope_entries(vault, scope, pool)
+        ]
+    )
     empty = not used
     return {
         "kind": "query",
@@ -246,6 +306,7 @@ def _check_query(vault: Vault, request: dict[str, Any]) -> dict[str, Any]:
         and not scope_changed,
         "changed": changed,
         "missing": missing,
+        "moved": diff["moved"],
         "scope_changed": page is not None and scope_changed,
     }
 
@@ -263,10 +324,10 @@ def check(vault: Vault, request: dict[str, Any]) -> dict[str, Any]:
 _STATE_OF_ACTION = {"create": "missing", "skip": "none", "none": "ok", "update": "stale"}
 
 
-def _lint_project(vault: Vault, name: str) -> dict[str, Any]:
+def _lint_project(vault: Vault, name: str, pool: _Pool) -> dict[str, Any]:
     """案件の統合ページの状態と、前回の材料との差（check と同じ判定）。"""
     try:
-        checked = _check_page(vault, {"name": name}, "project")
+        checked = _check_page(vault, {"name": name}, "project", pool)
     except ValueError:  # 予約語など、統合ページの名前にできない案件フォルダ
         return {"name": name, "state": "invalid"}
     diff = checked["diff"]
@@ -285,12 +346,11 @@ def _lint_project(vault: Vault, name: str) -> dict[str, Any]:
     }
 
 
-def _lint_themes(vault: Vault) -> list[dict[str, Any]]:
+def _lint_themes(vault: Vault, current: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """テーマページごとに、sources が壊れているか、実在しない資料を指していないか。"""
     folder = vault.wiki_dir / "themes"
     if not folder.is_dir():
         return []
-    current = _entries(vault)
     found = []
     for path in sorted(folder.glob("*.md")):
         page = read_page(path)
@@ -311,11 +371,39 @@ def _client_variants(vault: Vault) -> list[list[str]]:
 
 def lint(vault: Vault) -> dict[str, Any]:
     """機械 Lint。AI を使わず、案件名なしで全案件を読み取りだけで検査する（何も書かない）。"""
+    pool = _Pool(vault, _entries(vault))  # 全ノートの走査は 1 回だけ
     return {
-        "projects": [_lint_project(vault, name) for name in bundle.projects(vault)],
-        "themes": _lint_themes(vault),
+        "projects": [_lint_project(vault, name, pool) for name in bundle.projects(vault)],
+        "themes": _lint_themes(vault, pool.entries),
         "client_variants": _client_variants(vault),
     }
+
+
+def stale_counts(vault: Vault, notes: list[bundle.Note] | None = None) -> dict[str, int]:
+    """status 用の参考値。古い統合ページ（stale）と、再利用できない回答の件数。AI を使わない。
+
+    notes は status が持っているノート一覧（全ノートの走査を 1 回にする）。根拠のない回答
+    （「資料からは確認できない」）は、もともと再利用しないので数えない。参考値のために status を
+    止めないよう、読めないページ・回答は数えずに続ける。
+    """
+    pool = _Pool(vault, _entries(vault, None, notes))
+    projects = 0
+    for name in bundle.projects(vault):
+        try:
+            projects += _lint_project(vault, name, pool)["state"] == "stale"
+        except OSError:  # 使用中・権限なし
+            continue
+    queries = 0
+    folder = vault.wiki_dir / "queries"
+    for path in sorted(folder.glob("*.md")) if folder.is_dir() else []:
+        if path.is_symlink():
+            continue
+        try:
+            checked = _check_query(vault, {"file": path.name}, pool)
+        except (ValueError, OSError):  # 回答のファイル名にできない名前・読めない
+            continue
+        queries += checked["exists"] and not checked["empty"] and not checked["reusable"]
+    return {"stale_projects": projects, "stale_queries": queries}
 
 
 def _replace_moved(text: str, moves: dict[str, str]) -> str:

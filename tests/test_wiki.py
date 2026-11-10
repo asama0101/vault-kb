@@ -143,6 +143,19 @@ def test_project_entriesは同名案件の20_projects側だけを日付の新し
     assert project_entries(vault, "なし") == []
 
 
+def test_project_entriesはpoolを渡しても渡さなくても同じで_名前が前方一致する別案件を混ぜない(
+    vault,
+):
+    note(vault, "a.pdf")
+    note(vault, "x.pdf", project="A社2", sha="x")  # 案件 A社 と前方一致する別の案件
+    note(vault, "s.pdf", project="shared", sha="s")
+    pool = wiki._Pool(vault, wiki._entries(vault))
+
+    for name in (P, "A社2", "shared", "なし"):
+        assert wiki.project_entries(vault, name, pool) == wiki.project_entries(vault, name)
+    assert [e["resource"] for e in wiki.project_entries(vault, P, pool)] == [r("a.pdf")]
+
+
 def test_checkはノート1件ならskip_2件ならcreate(vault):
     note(vault, "a.pdf")
 
@@ -345,6 +358,60 @@ def test_check_queryは同じ範囲に資料が追加されるとscope_changed�
     assert result["scope_changed"] is True
     assert result["changed"] == []
     assert result["reusable"] is False
+
+
+def test_check_queryは原本を同じ範囲で動かしただけなら移動として再利用できる(vault):
+    note(vault, "a.pdf")
+    note(vault, "b.pdf", sha="b")
+    query(vault, [{"resource": r("a.pdf"), "sha256": "a" * 64}])
+    move(vault, "a.pdf", "a2.pdf", "a")  # sha256 は同じで、パスだけ変わった
+
+    result = check(vault, {"kind": "query", "file": "q.md"})
+
+    assert result["moved"] == [{"from": r("a.pdf"), "to": r("a2.pdf")}]
+    assert result["missing"] == []
+    assert (result["changed"], result["scope_changed"]) == ([], False)
+    assert result["reusable"] is True
+
+
+def test_check_queryは移動と同時に中身が変わった資料や消えた資料は移動にしない(vault):
+    note(vault, "a.pdf")
+    note(vault, "b.pdf", sha="b")
+    query(
+        vault,
+        [
+            {"resource": r("a.pdf"), "sha256": "a" * 64},
+            {"resource": r("b.pdf"), "sha256": "b" * 64},
+        ],
+    )
+    move(vault, "a.pdf", "a2.pdf", "f")  # 動かしつつ中身も変わった
+    (vault.notes_dir / f"{r('b.pdf')}.md").unlink()  # 消えた
+
+    result = check(vault, {"kind": "query", "file": "q.md"})
+
+    assert result["moved"] == []
+    assert sorted(result["missing"]) == [r("a.pdf"), r("b.pdf")]
+    assert result["reusable"] is False
+
+
+def test_check_queryは別の案件へ動かした資料を移動と報告するが再利用はしない(vault):
+    note(vault, "a.pdf")
+    query(vault, [{"resource": r("a.pdf"), "sha256": "a" * 64}])
+    (vault.notes_dir / f"{r('a.pdf')}.md").unlink()
+    note(vault, "a.pdf", project="別", sha="a")  # 範囲（案件 A社）の外へ
+
+    result = check(vault, {"kind": "query", "file": "q.md"})
+
+    assert result["moved"] == [{"from": r("a.pdf"), "to": r("a.pdf", "別")}]
+    assert result["scope_changed"] is True
+    assert result["reusable"] is False
+
+
+def test_check_queryは移動がなければmovedを空で返す(vault):
+    note(vault, "a.pdf")
+    query(vault, [{"resource": r("a.pdf"), "sha256": "a" * 64}])
+
+    assert check(vault, {"kind": "query", "file": "q.md"})["moved"] == []
 
 
 @pytest.mark.parametrize(
