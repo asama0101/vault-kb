@@ -155,6 +155,11 @@ def scope_digest(vault: Vault, scope: list[str]) -> str:
     return digest(_scope_entries(vault, scope))
 
 
+def _query_sources(meta: dict[str, Any]) -> Any:
+    """保存した回答の根拠の一覧。鍵は sources（旧い回答は evidence）。"""
+    return meta["sources"] if "sources" in meta else meta.get("evidence")
+
+
 def _valid_sources(value: Any) -> bool:
     return isinstance(value, list) and all(
         isinstance(e, dict)
@@ -270,7 +275,7 @@ def _check_query(
     file = _md_name(request, "file")
     page = read_page(vault.wiki_dir / "queries" / file)
     meta = page[0] if page else {}
-    evidence = meta["sources"] if "sources" in meta else meta.get("evidence")  # evidence は旧い鍵
+    evidence = _query_sources(meta)
     valid = _valid_sources(evidence)
     entries = _entries(vault) if pool is None else pool.entries
     now = {e["resource"]: e["sha256"] for e in entries} if pool is None else pool.shas
@@ -369,6 +374,36 @@ def _client_variants(vault: Vault) -> list[list[str]]:
     return [names for names in groups.values() if len(names) > 1]
 
 
+def _duplicate_queries(vault: Vault) -> list[list[str]]:
+    """質問（空白・大文字小文字を畳む）と根拠の資料の組が同じ、保存した回答の束（2 件以上だけ）。
+
+    重複の候補を示すだけで、回答は消さない・動かさない。根拠が壊れた回答は数えない。
+    根拠が空の回答（「資料からは確認できない」）は、探した範囲（scope）も同じときだけ重複とみなす。
+    """
+    folder = vault.wiki_dir / "queries"
+    groups: dict[tuple[str, frozenset[str], tuple[str, ...]], list[str]] = {}
+    for path in sorted(folder.glob("*.md")) if folder.is_dir() else []:
+        if path.is_symlink():
+            continue
+        try:
+            page = read_page(path)
+        except OSError:  # 使用中・権限なし
+            continue
+        meta = page[0] if page else {}
+        question = meta.get("question")
+        if not isinstance(question, str) or not question.strip():
+            continue
+        sources = _query_sources(meta)
+        if not _valid_sources(sources):
+            continue
+        resources = frozenset(s["resource"] for s in sources)
+        scope = meta.get("scope")
+        by_scope = tuple(scope) if not resources and isinstance(scope, list) else ()
+        key = (fold_name(" ".join(question.split())), resources, by_scope)
+        groups.setdefault(key, []).append(path.name)
+    return [names for names in groups.values() if len(names) > 1]
+
+
 def lint(vault: Vault) -> dict[str, Any]:
     """機械 Lint。AI を使わず、案件名なしで全案件を読み取りだけで検査する（何も書かない）。"""
     pool = _Pool(vault, _entries(vault))  # 全ノートの走査は 1 回だけ
@@ -376,6 +411,7 @@ def lint(vault: Vault) -> dict[str, Any]:
         "projects": [_lint_project(vault, name, pool) for name in bundle.projects(vault)],
         "themes": _lint_themes(vault, pool.entries),
         "client_variants": _client_variants(vault),
+        "duplicate_queries": _duplicate_queries(vault),
     }
 
 

@@ -28,6 +28,7 @@ compatibility: Windows 専用。Python 3.12〜3.14。
    - `projects` の `state` が `missing`（ノートが 2 件以上あるのに統合ページがない）・`stale`（前回の材料と違う）・`broken`（`sources` が壊れている）の案件と、その差（`added`＝統合ページの出典に入っていないノート、`removed`＝参照切れ、`moved`、`changed`）を示す。`invalid` の案件は、統合ページの名前にできないフォルダ名として示す。
    - `themes` の `broken` が true、または `missing_sources` が空でないものを示す（参照切れ）。
    - `client_variants` の組を、取引先の表記揺れとして示す（直さない。直すなら、ノートの `client` を人が揃える）。
+   - `duplicate_queries`（質問と根拠が同じ、保存した回答の束）を、重複の候補として示す。消さず、動かさない。整理するなら、新しい回答を残して、古いファイルを `.wiki/queries/` から人が削除する。
 3. 案件を決める: 上の案件名が空なら、機械 Lint の結果で `missing`・`stale`・`broken` の案件を示し、AI の Lint（食い違いの検出）を行う案件を利用者に聞く。行わないなら、ここで終わる。全案件を一度に作り直さない。
 4. 統合ページを更新する: `${CLAUDE_PLUGIN_ROOT}/references/wiki.md` を読み、その手順 2・3・7 を、request に `"full": true` を付けて行う（全ノートを読み直す全体の Lint）。`page` の op には `"lint": true` を付ける（`log.md` に `Linted` の行が残る）。回答の保存（手順 6）はしない。
 5. 結果を示す。
