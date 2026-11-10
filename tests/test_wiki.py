@@ -143,6 +143,19 @@ def test_project_entriesは同名案件の20_projects側だけを日付の新し
     assert project_entries(vault, "なし") == []
 
 
+def test_project_entriesはpoolを渡しても渡さなくても同じで_名前が前方一致する別案件を混ぜない(
+    vault,
+):
+    note(vault, "a.pdf")
+    note(vault, "x.pdf", project="A社2", sha="x")  # 案件 A社 と前方一致する別の案件
+    note(vault, "s.pdf", project="shared", sha="s")
+    pool = wiki._Pool(vault, wiki._entries(vault))
+
+    for name in (P, "A社2", "shared", "なし"):
+        assert wiki.project_entries(vault, name, pool) == wiki.project_entries(vault, name)
+    assert [e["resource"] for e in wiki.project_entries(vault, P, pool)] == [r("a.pdf")]
+
+
 def test_checkはノート1件ならskip_2件ならcreate(vault):
     note(vault, "a.pdf")
 
@@ -345,6 +358,60 @@ def test_check_queryは同じ範囲に資料が追加されるとscope_changed�
     assert result["scope_changed"] is True
     assert result["changed"] == []
     assert result["reusable"] is False
+
+
+def test_check_queryは原本を同じ範囲で動かしただけなら移動として再利用できる(vault):
+    note(vault, "a.pdf")
+    note(vault, "b.pdf", sha="b")
+    query(vault, [{"resource": r("a.pdf"), "sha256": "a" * 64}])
+    move(vault, "a.pdf", "a2.pdf", "a")  # sha256 は同じで、パスだけ変わった
+
+    result = check(vault, {"kind": "query", "file": "q.md"})
+
+    assert result["moved"] == [{"from": r("a.pdf"), "to": r("a2.pdf")}]
+    assert result["missing"] == []
+    assert (result["changed"], result["scope_changed"]) == ([], False)
+    assert result["reusable"] is True
+
+
+def test_check_queryは移動と同時に中身が変わった資料や消えた資料は移動にしない(vault):
+    note(vault, "a.pdf")
+    note(vault, "b.pdf", sha="b")
+    query(
+        vault,
+        [
+            {"resource": r("a.pdf"), "sha256": "a" * 64},
+            {"resource": r("b.pdf"), "sha256": "b" * 64},
+        ],
+    )
+    move(vault, "a.pdf", "a2.pdf", "f")  # 動かしつつ中身も変わった
+    (vault.notes_dir / f"{r('b.pdf')}.md").unlink()  # 消えた
+
+    result = check(vault, {"kind": "query", "file": "q.md"})
+
+    assert result["moved"] == []
+    assert sorted(result["missing"]) == [r("a.pdf"), r("b.pdf")]
+    assert result["reusable"] is False
+
+
+def test_check_queryは別の案件へ動かした資料を移動と報告するが再利用はしない(vault):
+    note(vault, "a.pdf")
+    query(vault, [{"resource": r("a.pdf"), "sha256": "a" * 64}])
+    (vault.notes_dir / f"{r('a.pdf')}.md").unlink()
+    note(vault, "a.pdf", project="別", sha="a")  # 範囲（案件 A社）の外へ
+
+    result = check(vault, {"kind": "query", "file": "q.md"})
+
+    assert result["moved"] == [{"from": r("a.pdf"), "to": r("a.pdf", "別")}]
+    assert result["scope_changed"] is True
+    assert result["reusable"] is False
+
+
+def test_check_queryは移動がなければmovedを空で返す(vault):
+    note(vault, "a.pdf")
+    query(vault, [{"resource": r("a.pdf"), "sha256": "a" * 64}])
+
+    assert check(vault, {"kind": "query", "file": "q.md"})["moved"] == []
 
 
 @pytest.mark.parametrize(
@@ -770,6 +837,20 @@ def test_wiki_index_mdは何も書かなかったapplyでは作らない(vault, 
     assert not (vault.wiki_dir / "index.md").exists()
 
 
+def test_取り消し線を履歴の節に移した本文も_節の中に残した本文も受理する(vault, data_dir):
+    two(vault)
+    strike = "~~保守費は月額 20 万円~~（取り消し 2026-11-08: 改定）"
+    inline = f"## 概要\n{strike} 保守費は月額 25 万円\n"
+    run(vault, data_dir, pop(vault, body=inline))  # 旧い書き方（節の中）
+
+    in_section = f"## 概要\n保守費は月額 25 万円\n\n## 履歴\n{strike}\n"  # 新しい書き方（履歴の節）
+    assert run(vault, data_dir, pop(vault, body=in_section))["written"]
+    assert page_of(vault)[1] == in_section.strip()
+
+    with pytest.raises(ValueError, match="取り消し線"):  # 組の数が減る本文は、これまでどおり拒む
+        run(vault, data_dir, pop(vault, body="## 概要\n保守費は月額 25 万円\n"))
+
+
 def test_applyはロックが取れなければbusyを返し何も書かない(vault, data_dir):
     two(vault)
     acquire(data_dir, NOW)
@@ -1113,6 +1194,74 @@ def test_lintは統合ページの名前にできない案件フォルダがあ�
 
     assert states["index"] == "invalid"
     assert states["shared"] == "none"
+
+
+def query_page(vault, file, question, resources, key="sources", scope=None):
+    sources = [{"resource": x, "sha256": "a" * 64} for x in resources]
+    scope = [P] if scope is None else scope
+    write_page(
+        vault,
+        f"queries/{file}",
+        {"type": "query", "question": question, key: sources, "scope": scope},
+    )
+
+
+def test_lintは質問と根拠が同じ保存した回答を重複の候補として束ねて返す(vault):
+    a, b = r("a.pdf"), r("b.pdf")
+    query_page(vault, "q1.md", "保守費は？", [a, b])
+    query_page(vault, "q2.md", "保守費は？", [b, a])  # 根拠の並びが違うだけ
+    query_page(vault, "q3.md", "保守費は？", [a, b])
+    query_page(vault, "other.md", "保守費は？", [a])  # 根拠が違う
+    query_page(vault, "diff.md", "保守期間は？", [a, b])  # 質問が違う
+
+    assert wiki.lint(vault)["duplicate_queries"] == [["q1.md", "q2.md", "q3.md"]]
+
+
+def test_lintは空白や大文字小文字だけ違う質問と旧い鍵evidenceの回答も同じとみなす(vault):
+    query_page(vault, "q1.md", "What  is\nthe FEE?", [r("a.pdf")])
+    query_page(vault, "q2.md", "what is the fee?", [r("a.pdf")], key="evidence")
+
+    assert wiki.lint(vault)["duplicate_queries"] == [["q1.md", "q2.md"]]
+
+
+def test_lintは根拠が空の回答どうしも質問が同じなら重複の候補にする(vault):
+    query_page(vault, "q1.md", "分からない質問", [])
+    query_page(vault, "q2.md", "分からない質問", [])
+
+    assert wiki.lint(vault)["duplicate_queries"] == [["q1.md", "q2.md"]]
+
+
+def test_lintは根拠が空の回答を案件が違えば重複の候補にしない(vault):
+    query_page(vault, "q1.md", "分からない質問", [], scope=[P])
+    query_page(vault, "q2.md", "分からない質問", [], scope=["別"])  # 別の案件で探した回答
+    query_page(vault, "q3.md", "分からない質問", [], scope=[P])
+
+    assert wiki.lint(vault)["duplicate_queries"] == [["q1.md", "q3.md"]]
+
+
+def test_lintは根拠が壊れた回答を重複の候補に数えない(vault):
+    query_page(vault, "ok.md", "質問", [])
+    write_page(
+        vault,
+        "queries/bad.md",
+        {"type": "query", "question": "質問", "sources": "壊れ", "scope": [P]},
+    )
+
+    assert wiki.lint(vault)["duplicate_queries"] == []
+
+
+def test_lintは重複がなければ空_回答のフォルダがなくても空(vault):
+    assert wiki.lint(vault)["duplicate_queries"] == []
+    query_page(vault, "q1.md", "質問", [r("a.pdf")])
+    assert wiki.lint(vault)["duplicate_queries"] == []
+
+
+def test_lintは質問がない回答や読めない回答を重複に数えず止まらない(vault):
+    write_page(vault, "queries/noq1.md", {"type": "query", "sources": []})
+    write_page(vault, "queries/noq2.md", {"type": "query", "sources": []})
+    (vault.wiki_dir / "queries" / "壊れ.md").write_bytes(b"\xff\xfe\x00")
+
+    assert wiki.lint(vault)["duplicate_queries"] == []
 
 
 def test_lintは何も書かない(vault):

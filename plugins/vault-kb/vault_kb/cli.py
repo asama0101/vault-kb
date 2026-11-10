@@ -13,7 +13,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from . import bundle, lock, reconcile, watch, wiki
+from . import bundle, lock, migrate, reconcile, watch, wiki
 from .vault import (
     ConfigError,
     atomic_write,
@@ -46,6 +46,10 @@ def _parser() -> argparse.ArgumentParser:
     wiki_apply = sub.add_parser("wiki-apply", help="計画（JSON）どおりに .wiki/ へ書く")
     wiki_apply.add_argument("plan")
     sub.add_parser("wiki-lint", help="機械 Lint。全案件の統合ページの状態を返す（何も書かない）")
+    migrate_parser = sub.add_parser(
+        "migrate", help="旧形式のノート・.wiki/ のページを新しい形式へ直す"
+    )
+    migrate_parser.add_argument("--apply", action="store_true", help="書き換える（既定は dry-run）")
     sub.add_parser("reindex", help="index.md を作り直す")
     sub.add_parser("watch", help="vault の変化を 1 行ずつ出す（Ctrl+C か unwatch で終わる）")
     sub.add_parser("unwatch", help="見張りに停止の印を書き、確認事項を返す")
@@ -120,6 +124,8 @@ def _run(args: argparse.Namespace, data_dir: Path) -> dict[str, Any] | list[Any]
         return result
     if args.command == "wiki-lint":
         return wiki.lint(vault)
+    if args.command == "migrate":
+        return migrate.run(vault, data_dir, now, args.apply)
     if args.command == "reindex":
         bundle.write_indexes(vault)
         return {"reindexed": True}

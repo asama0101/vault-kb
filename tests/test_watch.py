@@ -1,10 +1,10 @@
 import time
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
 from helpers import make_note, put
-from vault_kb import convert, watch
+from vault_kb import bundle, convert, watch, wiki
 from vault_kb.lock import acquire, release
 from vault_kb.vault import Vault
 
@@ -37,6 +37,8 @@ def test_statusはinbox_案件直下_未登録_孤児_更新の件数と合計�
         "orphan": 1,
         "changed": 1,
         "pending": 5,
+        "stale_projects": 0,
+        "stale_queries": 0,
         "busy": False,
     }
 
@@ -271,3 +273,144 @@ def test_snapshotは案件の下のドット始まりのフォルダの中を含
     put(vault, "20_projects/案件A/.git/config")
 
     assert list(watch.snapshot(vault)) == ["20_projects/案件A/共通/a.txt"]
+
+
+NOW = datetime(2026, 11, 10, 9, 30, tzinfo=UTC)
+
+
+def _note_with_original(vault, name, sha):
+    """実際のサイズと更新時刻を持つノート（片づけ待ちに数えられない）を置く。"""
+    original = put(vault, f"20_projects/A/01_x/{name}")
+    size, mtime_ns = convert.stat_of(original)
+    make_note(vault, "A", "01_x", name, sha256=sha * 64, size=size, mtime_ns=mtime_ns)
+
+
+def _wiki_with_page_and_query(vault, data_dir, evidence=("a.xlsx",)):
+    """案件 A の統合ページと、回答（根拠は evidence）を 1 件ずつ保存する。"""
+    for name, sha in (("a.xlsx", "a"), ("b.xlsx", "b")):
+        _note_with_original(vault, name, sha)
+    page = {
+        "op": "page",
+        "kind": "project",
+        "name": "A",
+        "body": "本文",
+        "expected_digest": wiki.digest(wiki.project_entries(vault, "A")),
+    }
+    query = {
+        "op": "query",
+        "question": "質問",
+        "answer": "回答",
+        "evidence": [f"20_projects/A/01_x/{name}" for name in evidence],
+        "scope": ["A"],
+        "slug": "q",
+    }
+    wiki.apply(vault, data_dir, {"ops": [page, query]}, NOW)
+
+
+def test_statusは古い統合ページと再利用できない回答の件数を参考値として返す(vault, data_dir):
+    _wiki_with_page_and_query(vault, data_dir)
+
+    fresh = watch.status(vault, data_dir)
+    assert (fresh["stale_projects"], fresh["stale_queries"]) == (0, 0)
+
+    _note_with_original(vault, "c.xlsx", "c")  # ページと回答のあとに、同じ案件のノートが増えた
+    stale = watch.status(vault, data_dir)
+
+    assert (stale["stale_projects"], stale["stale_queries"]) == (1, 1)
+
+
+def test_statusの古さの件数はpendingとunresolvedに入れない(vault, data_dir):
+    _wiki_with_page_and_query(vault, data_dir)
+    before = watch.status(vault, data_dir)["pending"]
+    _note_with_original(vault, "c.xlsx", "c")
+
+    status = watch.status(vault, data_dir)
+    items = watch.open_items(vault, data_dir)
+
+    assert status["pending"] == before == 0
+    assert items["unresolved"] == 0  # 古い回答だけで、見張りの終了確認を出さない
+
+
+def test_statusは根拠のない回答を再利用できない回答に数えない(vault, data_dir):
+    _wiki_with_page_and_query(vault, data_dir, evidence=())  # 「資料からは確認できない」回答
+
+    assert watch.status(vault, data_dir)["stale_queries"] == 0
+
+
+def test_statusは原本を同じ案件内で動かしただけなら回答を古いとしない(vault, data_dir):
+    _wiki_with_page_and_query(vault, data_dir)
+    (vault.notes_dir / "20_projects/A/01_x/a.xlsx.md").unlink()
+    _note_with_original(vault, "a2.xlsx", "a")  # sha256 は同じで、パスだけ変わった
+
+    status = watch.status(vault, data_dir)
+
+    assert status["stale_queries"] == 0
+    assert status["stale_projects"] == 1  # ページの出典のパスは古い（移動の反映は次の更新）
+
+
+def test_statusは全ノートの走査を1回だけにする(vault, data_dir, monkeypatch):
+    _wiki_with_page_and_query(vault, data_dir)
+    calls = []
+    scan = bundle.notes
+    monkeypatch.setattr(bundle, "notes", lambda v: calls.append(1) or scan(v))
+
+    watch.status(vault, data_dir)
+
+    assert len(calls) == 1
+
+
+def test_statusは根拠が複数で一部だけ動いた回答を古いとしない(vault, data_dir):
+    _wiki_with_page_and_query(vault, data_dir, evidence=("a.xlsx", "b.xlsx"))
+    (vault.notes_dir / "20_projects/A/01_x/a.xlsx.md").unlink()
+    _note_with_original(vault, "a2.xlsx", "a")  # a だけ動いた（b はそのまま）
+
+    assert watch.status(vault, data_dir)["stale_queries"] == 0
+
+
+def test_statusは範囲が空の回答を別の案件へ動かしても古いとしない(vault, data_dir):
+    for name, sha in (("a.xlsx", "a"), ("b.xlsx", "b")):
+        _note_with_original(vault, name, sha)
+    op = {
+        "op": "query",
+        "question": "全体",
+        "answer": "回答",
+        "evidence": ["20_projects/A/01_x/a.xlsx"],
+        "scope": [],  # vault 全体
+        "slug": "q",
+    }
+    wiki.apply(vault, data_dir, {"ops": [op]}, NOW)
+    (vault.notes_dir / "20_projects/A/01_x/a.xlsx.md").unlink()
+    original = put(vault, "20_projects/B/01_x/a.xlsx")
+    size, mtime_ns = convert.stat_of(original)
+    make_note(vault, "B", "01_x", "a.xlsx", sha256="a" * 64, size=size, mtime_ns=mtime_ns)
+
+    assert watch.status(vault, data_dir)["stale_queries"] == 0
+
+
+def test_statusは壊れた_wiki_があっても落ちず_読めないページは数えない(vault, data_dir):
+    _wiki_with_page_and_query(vault, data_dir)
+    queries = vault.wiki_dir / "queries"
+    (queries / "壊れ.md").write_bytes(b"\xff\xfe\x00 not utf-8")
+    (queries / "con.md").write_text('---\ntype: "query"\n---\n', encoding="utf-8")
+    (vault.wiki_dir / "projects" / "B.md").write_text("---\nsources: 1\n---\n", encoding="utf-8")
+
+    status = watch.status(vault, data_dir)
+
+    assert (status["stale_projects"], status["stale_queries"]) == (0, 0)
+
+
+def test_statusは回答のファイルを読めなくても落ちず_その分を数えない(vault, data_dir, monkeypatch):
+    _wiki_with_page_and_query(vault, data_dir)
+    _note_with_original(vault, "c.xlsx", "c")
+    real = wiki.read_page
+
+    def locked(path):
+        if path.parent.name == "queries":
+            raise PermissionError("使用中")
+        return real(path)
+
+    monkeypatch.setattr(wiki, "read_page", locked)
+
+    status = watch.status(vault, data_dir)
+
+    assert (status["stale_projects"], status["stale_queries"]) == (1, 0)

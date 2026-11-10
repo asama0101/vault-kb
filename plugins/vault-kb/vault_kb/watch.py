@@ -8,7 +8,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from . import bundle, convert
+from . import bundle, convert, wiki
 from .lock import is_fresh, lock_path
 from .vault import INBOX_NAME, Vault, atomic_write, walk
 
@@ -40,6 +40,7 @@ def status(vault: Vault, data_dir: Path) -> dict[str, Any]:
         "vault": str(vault.root),
         **counts,
         "pending": sum(counts.values()),
+        **wiki.stale_counts(vault, all_notes),  # 参考値。pending・unresolved には入れない
         "busy": is_fresh(lock_path(data_dir), datetime.now().astimezone()),
     }
 

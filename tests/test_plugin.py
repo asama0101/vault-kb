@@ -22,11 +22,12 @@ def frontmatter(path: Path) -> dict[str, str]:
     return dict(line.split(": ", 1) for line in head.splitlines() if ": " in line)
 
 
-def test_スキルは6つあり_nameがディレクトリ名と一致する():
+def test_スキルは7つあり_nameがディレクトリ名と一致する():
     assert [p.parent.name for p in SKILLS] == [
         "ask",
         "init",
         "lint",
+        "migrate",
         "sweep",
         "unwatch",
         "watch",
@@ -48,8 +49,8 @@ def test_手順書は同名のconflictだけの結果で繰り返さない():
     assert "`discarded`・`conflict`）" not in text
 
 
-def test_init_lint_sweep_unwatch_watchだけが自動起動を禁止している():
-    for name in ("init", "lint", "sweep", "unwatch", "watch"):
+def test_init_lint_migrate_sweep_unwatch_watchだけが自動起動を禁止している():
+    for name in ("init", "lint", "migrate", "sweep", "unwatch", "watch"):
         assert frontmatter(PLUGIN / f"skills/{name}/SKILL.md")["disable-model-invocation"] == "true"
     assert "disable-model-invocation" not in frontmatter(PLUGIN / "skills/ask/SKILL.md")
 
@@ -58,6 +59,11 @@ def allowed_commands(skill: str) -> list[str]:
     """allowed-tools の run.py コマンド（サブコマンドと引数のパターン）。"""
     tools = frontmatter(PLUGIN / f"skills/{skill}/SKILL.md")["allowed-tools"]
     return re.findall(r'run\.py" --data "\$\{CLAUDE_PLUGIN_DATA\}" ([^)]+)\)', tools)
+
+
+def test_migrateは状態確認とdry_runだけを承認なしで許可し_applyは許可しない():
+    # --apply は書き換えるので、許可の確認を出す（allowed-tools に含めない）
+    assert allowed_commands("migrate") == ["status", "migrate"]
 
 
 def test_askは状態確認と片づけのコマンドだけを承認なしで許可する():

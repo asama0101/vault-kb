@@ -149,15 +149,20 @@ def generated(now: datetime) -> dict[str, str]:
     return {"by": f"vault-kb/{__version__}", "at": now.isoformat()}
 
 
-def note_text(meta: dict[str, Any], body: str) -> str:
-    """ノートの全文。frontmatter は NOTE_KEYS の順、続けて足された鍵を `key: <json>` で書く。
-
-    resource（と sources の各 resource）は、先頭に `/` を付けて書く（OKF の束相対）。
+def frontmatter_text(meta: dict[str, Any]) -> str:
+    """frontmatter（`---` で囲んだ部分。末尾の改行まで）。NOTE_KEYS の順、続けて足された鍵を
+    `key: <json>` で書く。resource（と sources の各 resource）は、先頭に `/` を付けて書く
+    （OKF の束相対）。
     """
     meta = _map_resources(meta, _add_slash)
     keys = [k for k in NOTE_KEYS if k in meta] + [k for k in meta if k not in NOTE_KEYS]
     head = "".join(f"{key}: {json.dumps(meta[key], ensure_ascii=False)}\n" for key in keys)
-    return f"---\n{head}---\n\n{body.strip()}\n"
+    return f"---\n{head}---\n"
+
+
+def note_text(meta: dict[str, Any], body: str) -> str:
+    """ノートの全文（frontmatter、空行、本文）。"""
+    return f"{frontmatter_text(meta)}\n{body.strip()}\n"
 
 
 def write_note(path: Path, meta: dict[str, Any], body: str) -> None:
@@ -448,15 +453,17 @@ def write_indexes(vault: Vault) -> None:
 def append_log(vault: Vault, entries: list[str], now: datetime) -> None:
     """log.md の今日の見出しの直後に entries を足す（見出しがなければ先頭に作る）。
 
-    各行は `- HH:MM <entry>` の形にする（時刻は now）。
+    各行は `- HH:MM <entry>` の形にする（時刻は now）。見出しの前に文章があっても、
+    今日の見出しが（行頭に）あれば、増やさずにその直後へ足す。
     """
     path = vault.root / "log.md"
     existing = path.read_text(encoding="utf-8") if path.exists() else ""
     heading = f"## {now.date().isoformat()}\n"
     lines = "".join(f"- {now:%H:%M} {entry}\n" for entry in entries)
-    if existing.startswith(heading):
-        rest = existing[len(heading) :].removeprefix("\n")
-        text = f"{heading}\n{lines}{rest}"
+    found = re.search(f"^{re.escape(heading.rstrip())}$", existing, re.MULTILINE)
+    if found:
+        rest = existing[found.end() :].removeprefix("\n").removeprefix("\n")
+        text = f"{existing[: found.end()]}\n\n{lines}{rest}"
     else:
         text = f"{heading}\n{lines}" + (f"\n{existing}" if existing else "")
     atomic_write(path, text)

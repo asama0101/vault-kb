@@ -9,10 +9,12 @@ from datetime import datetime
 from pathlib import Path
 
 import pytest
+from helpers import make_note, put
 from okf_check import check_bundle
 from sample_docs import make_txt
 from vault_kb.bundle import is_note, read_frontmatter
 from vault_kb.cli import main
+from vault_kb.vault import Vault
 
 KB = Path(__file__).resolve().parent.parent / "plugins" / "vault-kb" / "kb.py"
 TEMPLATES = [
@@ -362,6 +364,41 @@ def test_record_stopは未解消の件数をlogに足す(configured):
     assert json.loads(result.stdout) == {"recorded": True, "unresolved": 1}
     log = (root / "log.md").read_text(encoding="utf-8")
     assert re.search(r"- \d\d:\d\d \*\*Stopped\*\* 見張りを止めた（未解消 1 件）\n", log)
+
+
+def _legacy_note(root):
+    """2.2.0 までの形（resource に先頭 / がない）のノートを 1 件置く。"""
+    vault = Vault(root)
+    path = make_note(vault, "A社", "01_見積", "a.pdf")
+    put(vault, "20_projects/A社/01_見積/a.pdf")
+    text = path.read_text(encoding="utf-8").replace('resource: "/', 'resource: "')
+    path.write_bytes(text.encode("utf-8"))  # LF のまま（write_text は Windows で CRLF にする）
+    return path
+
+
+def test_migrateは既定でdry_runし_applyで直してバックアップを置く(configured):
+    root, data = configured
+    note = _legacy_note(root)
+    before = note.read_bytes()
+
+    dry = kb(data, "migrate")
+
+    assert dry.returncode == 0, dry.stderr
+    found = json.loads(dry.stdout)
+    assert found["dry_run"] is True
+    assert found["changed"] == [".notes/20_projects/A社/01_見積/a.pdf.md"]
+    assert note.read_bytes() == before
+    assert not (data / "backup").exists()
+
+    done = kb(data, "migrate", "--apply")
+
+    assert done.returncode == 0, done.stderr
+    applied = json.loads(done.stdout)
+    assert (applied["dry_run"], applied["changed"]) == (False, found["changed"])
+    assert 'resource: "/20_projects/A社/01_見積/a.pdf"' in note.read_text(encoding="utf-8")
+    backup = Path(applied["backup"]) / ".notes/20_projects/A社/01_見積/a.pdf.md"
+    assert backup.read_bytes() == before
+    assert json.loads(kb(data, "migrate").stdout)["changed"] == []  # 直したあとは対象がない
 
 
 def test_wiki_lintは全案件の状態をJSONで返し何も書かない(configured):
