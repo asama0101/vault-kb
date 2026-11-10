@@ -437,6 +437,44 @@ def test_append_logは見出しより前の文章を残す(vault):
     )
 
 
+def test_append_logは見出しの前に文章があっても今日の見出しを増やさず直後に足す(vault):
+    _write_log(vault, "メモ\n\n## 2026-11-02\n\n- **Filed** 旧\n\n## 2026-10-31\n\n- 前\n")
+
+    append_log(vault, ["**Filed** 新"], datetime(2026, 11, 2, 9, 5))
+
+    text = (vault.root / "log.md").read_text(encoding="utf-8")
+    assert text == (
+        "メモ\n\n## 2026-11-02\n\n- 09:05 **Filed** 新\n- **Filed** 旧\n\n## 2026-10-31\n\n- 前\n"
+    )
+    assert text.count("## 2026-11-02") == 1
+    assert check_bundle(vault.root) == []  # 見出しが降順のまま
+
+
+def test_append_logはファイル末尾が改行なしの今日の見出しにも足す(vault):
+    _write_log(vault, "## 2026-11-02")
+
+    append_log(vault, ["**Filed** 新"], datetime(2026, 11, 2, 9, 5))
+
+    assert (vault.root / "log.md").read_text(encoding="utf-8") == (
+        "## 2026-11-02\n\n- 09:05 **Filed** 新\n"
+    )
+
+
+@pytest.mark.parametrize(
+    "existing",
+    ["x ## 2026-11-02\n- 旧\n", "## 2026-11-020\n- 旧\n", "### 2026-11-02\n- 旧\n"],
+    ids=["行の途中", "日付が長い", "見出しの階層が違う"],
+)
+def test_append_logは行頭の日付ちょうどの見出しだけを今日の見出しとみなす(vault, existing):
+    _write_log(vault, existing)
+
+    append_log(vault, ["**Filed** 新"], datetime(2026, 11, 2, 9, 5))
+
+    assert (vault.root / "log.md").read_text(encoding="utf-8") == (
+        f"## 2026-11-02\n\n- 09:05 **Filed** 新\n\n{existing}"
+    )
+
+
 def test_dateが文字列でないノートがあっても索引を書け_日付なしとして最後に並ぶ(vault):
     make_note(vault, "A", "01_x", "int.xlsx", title="整数", date=20260101)
     make_note(vault, "A", "01_x", "ok.xlsx", title="正常", date="2026-01-01")

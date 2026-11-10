@@ -448,15 +448,17 @@ def write_indexes(vault: Vault) -> None:
 def append_log(vault: Vault, entries: list[str], now: datetime) -> None:
     """log.md の今日の見出しの直後に entries を足す（見出しがなければ先頭に作る）。
 
-    各行は `- HH:MM <entry>` の形にする（時刻は now）。
+    各行は `- HH:MM <entry>` の形にする（時刻は now）。見出しの前に文章があっても、
+    今日の見出しが（行頭に）あれば、増やさずにその直後へ足す。
     """
     path = vault.root / "log.md"
     existing = path.read_text(encoding="utf-8") if path.exists() else ""
     heading = f"## {now.date().isoformat()}\n"
     lines = "".join(f"- {now:%H:%M} {entry}\n" for entry in entries)
-    if existing.startswith(heading):
-        rest = existing[len(heading) :].removeprefix("\n")
-        text = f"{heading}\n{lines}{rest}"
+    found = re.search(f"^{re.escape(heading.rstrip())}$", existing, re.MULTILINE)
+    if found:
+        rest = existing[found.end() :].removeprefix("\n").removeprefix("\n")
+        text = f"{existing[: found.end()]}\n\n{lines}{rest}"
     else:
         text = f"{heading}\n{lines}" + (f"\n{existing}" if existing else "")
     atomic_write(path, text)
