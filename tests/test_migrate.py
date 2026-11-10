@@ -157,7 +157,7 @@ def test_1行1項目でないfrontmatterは壊さないよう触らず報告す�
     path = legacy_note(vault)
     text = path.read_text(encoding="utf-8")
     block = text.replace('tags: ["t"]', "tags:\n  - t")  # Obsidian が書き直した形
-    path.write_text(block)
+    lf(path, block)
 
     result = migrate.run(vault, data_dir, NOW, apply=True)
 
