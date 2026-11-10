@@ -121,6 +121,7 @@ claude plugin uninstall vault-kb@vault-kb
 | `/vault-kb:init` | 初回の設定。vault や専用環境を変えるとき |
 | `/vault-kb:ask` | 資料を探す・質問する。答える前に、未処理の資料を片づける |
 | `/vault-kb:lint` | 全案件の統合ページの状態を機械的に調べて示し、案件を指定すると資料の食い違いも示す |
+| `/vault-kb:migrate` | 旧形式（2.2.0 まで）のノートと `.wiki/` のページを、新しい形式へ一括で直す（任意） |
 | `/vault-kb:watch` | 自動で片づける見張りを始める |
 | `/vault-kb:sweep` | いま溜まっている資料を、1 回だけ片づける |
 | `/vault-kb:unwatch` | 見張りを止める |
